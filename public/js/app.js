@@ -34,6 +34,10 @@ const S = {
   log: [],
   // ── UI ──
   inputCode: '',
+  // ── ソロモード (AI対戦) ──
+  solo: false,
+  oppHand: [],     // ソロ用: AIの手牌 (実値)
+  aiTimer: null,
 };
 
 // ── ユーティリティ ─────────────────────────────────
@@ -83,6 +87,7 @@ function renderHome() {
     <div class="subtitle">2人対戦・七対子の簡易版</div>
     <button class="btn primary" id="btn-create">ルーム作成</button>
     <button class="btn" id="btn-join">ルームに参加</button>
+    <button class="btn ghost" id="btn-solo">🤖 1人で試す (AI対戦)</button>
     <div class="rule-card">
       <div class="rule-title">遊び方</div>
       <ol>
@@ -193,6 +198,7 @@ function bind() {
   // ── ホーム
   $('btn-create')?.addEventListener('click', startCreate);
   $('btn-join')?.addEventListener('click', () => { S.screen='join'; render(); });
+  $('btn-solo')?.addEventListener('click', startSolo);
   // ── 戻る共通
   $('btn-back')?.addEventListener('click', goHome);
   $('btn-quit')?.addEventListener('click', () => {
@@ -223,6 +229,10 @@ function bind() {
 // ── 画面遷移ヘルパー ───────────────────────────────
 function goHome() {
   cleanupPeer();
+  clearTimeout(S.aiTimer);
+  S.aiTimer = null;
+  S.solo = false;
+  S.oppHand = [];
   S.screen = 'home';
   S.roomCode = null;
   S.isHost = false;
@@ -310,6 +320,58 @@ function randomCode() {
   let s = '';
   for (let i=0;i<6;i++) s += chars[Math.floor(Math.random()*chars.length)];
   return s;
+}
+
+// ── ソロモード (AI対戦) ────────────────────────────
+function startSolo() {
+  S.solo = true;
+  S.isHost = false;
+  S.wall = buildWall();
+  S.myHand = sortHand(S.wall.splice(0, HAND_SIZE));
+  S.oppHand = S.wall.splice(0, HAND_SIZE);
+  S.oppHandCount = HAND_SIZE;
+  S.myDiscards = [];
+  S.oppDiscards = [];
+  S.drawn = null;
+  S.winner = null; S.winHand = null;
+  S.myTurn = true;
+  S.screen = 'game';
+  render();
+}
+
+function aiTurn() {
+  if (!S.solo || S.winner) return;
+  // AIツモ
+  if (S.wall.length === 0) {
+    S.winner = 'draw';
+    S.screen = 'result';
+    render();
+    return;
+  }
+  const drawn = S.wall.shift();
+  S.oppHand.push(drawn);
+  // 上がり判定
+  if (isWin(S.oppHand)) {
+    S.winner = 'opp';
+    S.winHand = sortHand([...S.oppHand]);
+    S.screen = 'result';
+    render();
+    return;
+  }
+  // ペアになっていない孤立牌から1枚捨てる (シンプルAI)
+  const cnt = {};
+  for (const t of S.oppHand) cnt[t] = (cnt[t]||0)+1;
+  const singles = S.oppHand.filter(t => cnt[t] === 1);
+  const tile = singles.length > 0
+    ? singles[Math.floor(Math.random()*singles.length)]
+    : S.oppHand[Math.floor(Math.random()*S.oppHand.length)];
+  // 手牌から削除
+  const idx = S.oppHand.indexOf(tile);
+  S.oppHand.splice(idx, 1);
+  S.oppDiscards.push(tile);
+  S.oppHandCount = S.oppHand.length;
+  S.myTurn = true;
+  render();
 }
 
 // ── ゲーム開始 (ホスト側) ──────────────────────────
@@ -410,15 +472,21 @@ function doDraw() {
   if (!S.myTurn || S.drawn) return;
   if (S.wall.length === 0) {
     // 流局
-    send({type:'draw_game'});
+    if (!S.solo) send({type:'draw_game'});
     S.winner = 'draw';
     S.screen = 'result';
     render();
     return;
   }
   S.drawn = S.wall.shift();
-  send({type:'draw', wall:S.wall, oppHandCount:S.oppHandCount});
+  if (!S.solo) send({type:'draw', wall:S.wall, oppHandCount:S.oppHandCount});
   render();
+}
+
+function scheduleAi() {
+  if (!S.solo) return;
+  clearTimeout(S.aiTimer);
+  S.aiTimer = setTimeout(aiTurn, 800);
 }
 
 function doDiscardFromHand(idx) {
@@ -431,8 +499,9 @@ function doDiscardFromHand(idx) {
   S.drawn = null;
   S.myDiscards.push(tile);
   S.myTurn = false;
-  send({type:'discard', tile, wall:S.wall, oppHandCount:S.oppHandCount});
+  if (!S.solo) send({type:'discard', tile, wall:S.wall, oppHandCount:S.oppHandCount});
   render();
+  scheduleAi();
 }
 
 function doDiscardDrawn() {
@@ -441,8 +510,9 @@ function doDiscardDrawn() {
   S.drawn = null;
   S.myDiscards.push(tile);
   S.myTurn = false;
-  send({type:'discard', tile, wall:S.wall, oppHandCount:S.oppHandCount});
+  if (!S.solo) send({type:'discard', tile, wall:S.wall, oppHandCount:S.oppHandCount});
   render();
+  scheduleAi();
 }
 
 function declareWin() {
@@ -452,11 +522,12 @@ function declareWin() {
   S.winner = 'me';
   S.winHand = hand;
   S.screen = 'result';
-  send({type:'win', hand});
+  if (!S.solo) send({type:'win', hand});
   render();
 }
 
 function rematch() {
+  if (S.solo) { startSolo(); return; }
   if (!S.conn) { goHome(); return; }
   send({type:'rematch_request'});
   alert('相手の同意を待っています...');
