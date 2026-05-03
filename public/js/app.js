@@ -46,6 +46,7 @@ const S = {
   solo: false, oppHand: [], aiTimer: null,
   // UI
   inputCode: '',
+  selectedIdx: null, // null|number: 選択中の手牌インデックス, -1=ツモ牌
 };
 
 // ── ユーティリティ ─────────────────────────────────
@@ -150,6 +151,15 @@ function canPon(concealed, tile) {
   return concealed.filter(t => t === tile).length >= 2;
 }
 
+// テンパイ判定: 手牌に何の牌を足せば上がるか調べる
+function findWaits(concealed, melds) {
+  const waits = [];
+  for (const t of chars()) {
+    if (checkWin(concealed, melds, t)) waits.push(t);
+  }
+  return waits;
+}
+
 // ── レンダリング ───────────────────────────────────
 function render() {
   const app = $('app');
@@ -237,25 +247,24 @@ function renderJoin() {
 }
 
 // ── 手牌グルーピング表示 ────────────────────────────
-// 同字を視覚的にまとめ、連続も色分けする
+// 隣接同字 or 連続を色分け、選択中は強調
 function renderGroupedHand(tiles, options={}) {
   const action = options.action ? options.action : '';
+  const selected = options.selected;
   const cs = chars();
   let lastChar = null;
   let groupColor = 0;
   const html = tiles.map((t, i) => {
     let cls = 'tile';
-    // グルーピング: 直前と同字 or 連続なら同じ色
     if (lastChar !== null) {
       const lastIdx = cs.indexOf(lastChar);
       const curIdx = cs.indexOf(t);
-      if (lastChar === t || curIdx === lastIdx + 1) {
-        // 同グループ
-      } else {
+      if (!(lastChar === t || curIdx === lastIdx + 1)) {
         groupColor = (groupColor + 1) % 4;
       }
     }
     cls += ' g' + groupColor;
+    if (selected === i) cls += ' selected';
     lastChar = t;
     const data = action ? `data-idx="${i}" data-action="${action}"` : '';
     return `<div class="${cls}" ${data}>${esc(t)}</div>`;
@@ -282,10 +291,17 @@ function renderGame() {
   const myDis = renderDiscards(S.myDiscards);
   const oppDis = renderDiscards(S.oppDiscards, S.lastDiscard ? S.oppDiscards.length-1 : -1);
 
+  // テンパイ判定 (自分のターンで未ツモのとき = 13枚)
+  let tenpaiInfo = '';
+  if (S.myTurn && !S.drawn && !S.pendingClaim && S.myHand.length === 13 - S.myMelds.length * 0) {
+    // 13枚のとき: 何かを足せば14枚になる→ checkWin
+    const waits = findWaits(S.myHand, S.myMelds);
+    if (waits.length > 0) tenpaiInfo = `<div class="tenpai-badge">🔥 テンパイ! 待ち: ${waits.map(esc).join('・')}</div>`;
+  }
+
   // ターン表示・操作ボタン
   let turnLabel, actionArea = '';
   if (S.pendingClaim) {
-    // 相手の捨て牌に対するポン/ロン判定中
     const tile = S.lastDiscard;
     const ronOK = checkWin(S.myHand, S.myMelds, tile);
     const ponOK = canPon(S.myHand, tile);
@@ -300,13 +316,32 @@ function renderGame() {
     actionArea = `<button class="big-btn" id="btn-draw">ツモ</button>`;
   } else if (S.myTurn && S.drawn) {
     const tsumoOK = checkWin(S.myHand, S.myMelds, S.drawn);
-    turnLabel = '捨てる牌をタップ';
-    actionArea = tsumoOK ? `<button class="big-btn win" id="btn-tsumo">🏆 ツモあがり</button>` : `<div class="hint">手牌かツモ牌をタップして捨てる</div>`;
+    if (tsumoOK) {
+      turnLabel = '🏆 ツモ可能!';
+      actionArea = `<div class="action-row">
+        <button class="big-btn win" id="btn-tsumo">🏆 ツモあがり</button>
+        ${S.selectedIdx != null
+          ? `<button class="big-btn" id="btn-confirm-discard">捨てる</button>
+             ${S.selectedIdx >= 0 ? `<button class="btn xs" id="btn-move-left">←</button><button class="btn xs" id="btn-move-right">→</button>` : ''}`
+          : `<div class="hint">捨てる時は手牌タップ</div>`}
+      </div>`;
+    } else if (S.selectedIdx != null) {
+      const t = S.selectedIdx === -1 ? S.drawn : S.myHand[S.selectedIdx];
+      turnLabel = `「${t}」を捨てますか?`;
+      actionArea = `<div class="action-row">
+        <button class="big-btn" id="btn-confirm-discard">捨てる</button>
+        ${S.selectedIdx >= 0 ? `<button class="btn xs" id="btn-move-left">← 左へ</button><button class="btn xs" id="btn-move-right">→ 右へ</button>` : ''}
+        <button class="btn xs ghost" id="btn-cancel-select">キャンセル</button>
+      </div>`;
+    } else {
+      turnLabel = '捨てる牌をタップ';
+      actionArea = `<div class="hint">手牌またはツモ牌をタップ</div>`;
+    }
   } else {
     turnLabel = '相手の番...';
   }
 
-  const drawnTile = S.drawn ? `<div class="tile drawn" data-action="discard-drawn">${esc(S.drawn)}</div>` : '';
+  const drawnTile = S.drawn ? `<div class="tile drawn ${S.selectedIdx===-1?'selected':''}" data-action="select-drawn">${esc(S.drawn)}</div>` : '';
 
   return `<div class="screen game">
     <!-- 上部: 残り山・ターン・終了 -->
@@ -334,6 +369,7 @@ function renderGame() {
 
     <!-- 中央: 操作 -->
     <div class="center-zone">
+      ${tenpaiInfo}
       ${actionArea}
     </div>
 
@@ -346,10 +382,13 @@ function renderGame() {
       <div class="melds">${renderMelds(S.myMelds)}</div>
       <div class="player-label">
         <span>自分</span>
-        <span class="muted">手牌${S.myHand.length}枚${S.drawn?' +1':''}</span>
+        <span class="hand-tools">
+          <button class="btn xs ghost" id="btn-sort">🔃 並べ替え</button>
+          <span class="muted">手牌${S.myHand.length}枚${S.drawn?' +1':''}</span>
+        </span>
       </div>
       <div class="hand-row">
-        <div class="concealed mine">${renderGroupedHand(S.myHand, {action:'discard-hand'})}</div>
+        <div class="concealed mine">${renderGroupedHand(S.myHand, {action:'select-hand', selected:S.selectedIdx})}</div>
         ${drawnTile ? `<div class="drawn-wrap">${drawnTile}</div>` : ''}
       </div>
     </div>
@@ -404,10 +443,16 @@ function bind() {
   $('btn-pon')?.addEventListener('click', doPon);
   $('btn-ron')?.addEventListener('click', doRon);
   $('btn-skip')?.addEventListener('click', doSkipClaim);
-  document.querySelectorAll('[data-action="discard-hand"]').forEach(el => {
-    el.addEventListener('click', e => doDiscardFromHand(Number(e.currentTarget.dataset.idx)));
+  // タップ選択モード
+  document.querySelectorAll('[data-action="select-hand"]').forEach(el => {
+    el.addEventListener('click', e => selectHand(Number(e.currentTarget.dataset.idx)));
   });
-  document.querySelector('[data-action="discard-drawn"]')?.addEventListener('click', doDiscardDrawn);
+  document.querySelector('[data-action="select-drawn"]')?.addEventListener('click', selectDrawn);
+  $('btn-confirm-discard')?.addEventListener('click', confirmDiscard);
+  $('btn-cancel-select')?.addEventListener('click', () => { S.selectedIdx = null; render(); });
+  $('btn-move-left')?.addEventListener('click', () => moveSelected(-1));
+  $('btn-move-right')?.addEventListener('click', () => moveSelected(+1));
+  $('btn-sort')?.addEventListener('click', () => { S.myHand = sortHand(S.myHand); S.selectedIdx = null; render(); });
   // 結果
   $('btn-rematch')?.addEventListener('click', rematch);
   $('btn-home')?.addEventListener('click', goHome);
@@ -423,6 +468,7 @@ function goHome() {
   S.myHand = []; S.myMelds = []; S.oppMelds = [];
   S.myDiscards = []; S.oppDiscards = [];
   S.drawn = null; S.lastDiscard = null; S.pendingClaim = false;
+  S.selectedIdx = null;
   render();
 }
 
@@ -584,29 +630,49 @@ function doDraw() {
   render();
 }
 
-function doDiscardFromHand(idx) {
+// ── 選択 → 捨てる/並び替え フロー ─────────────────
+function selectHand(idx) {
   if (!S.myTurn) return;
-  // ツモ/ポン後の捨て牌
-  const tile = S.myHand[idx];
-  S.myHand.splice(idx, 1);
-  if (S.drawn) {
-    S.myHand.push(S.drawn);
-    S.myHand = sortHand(S.myHand);
+  S.selectedIdx = (S.selectedIdx === idx) ? null : idx;
+  render();
+}
+function selectDrawn() {
+  if (!S.myTurn || !S.drawn) return;
+  S.selectedIdx = (S.selectedIdx === -1) ? null : -1;
+  render();
+}
+function confirmDiscard() {
+  if (!S.myTurn || S.selectedIdx == null) return;
+  let tile;
+  if (S.selectedIdx === -1) {
+    tile = S.drawn;
     S.drawn = null;
+  } else {
+    tile = S.myHand[S.selectedIdx];
+    S.myHand.splice(S.selectedIdx, 1);
+    if (S.drawn) {
+      // ツモ牌は手牌の末尾に挿入 (ユーザーの並び順を保つ)
+      S.myHand.push(S.drawn);
+      S.drawn = null;
+    }
   }
+  S.selectedIdx = null;
   finishDiscard(tile);
 }
-
-function doDiscardDrawn() {
-  if (!S.myTurn || !S.drawn) return;
-  const tile = S.drawn;
-  S.drawn = null;
-  finishDiscard(tile);
+function moveSelected(dir) {
+  if (S.selectedIdx == null || S.selectedIdx < 0) return;
+  const i = S.selectedIdx;
+  const j = i + dir;
+  if (j < 0 || j >= S.myHand.length) return;
+  [S.myHand[i], S.myHand[j]] = [S.myHand[j], S.myHand[i]];
+  S.selectedIdx = j;
+  render();
 }
 
 function finishDiscard(tile) {
   S.myDiscards.push(tile);
   S.myTurn = false;
+  S.selectedIdx = null;
   if (!S.solo) send({type:'discard', tile, wall:S.wall, oppHandCount:S.oppHandCount});
   render();
   scheduleAi(); // ソロのときAI応答
