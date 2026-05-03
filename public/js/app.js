@@ -1,60 +1,124 @@
 'use strict';
 /* ─────────────────────────────────────────────────
-   ひらがジャン v2 (麻雀風)
-   - 手牌13、ツモ→14で「4面子+1雀頭」or「7対子」で上がり
-   - 面子: 順子 (連続3) または 刻子 (同字3)
-   - ポン: 相手の捨て牌で刻子作成 (要2枚)
-   - ロン: 相手の捨て牌で上がり
-   - ツモ: 自分が引いた牌で上がり
-   - 通信: PeerJS / ソロモード(AI)対応
+   ひらがジャン v3 (単語ゲーム版)
+   - ひらがな牌で意味のある「単語」を作って上がる
+   - 手牌7枚 → ツモで8枚 → 単語に分割できればあがり
+   - 例: 「あんこ」+「ねこ」+「は」(2字以上必須なので残れば不可)
+       → 「あんこ」+「ねこ」+「うえ」+(?) など7字で完成
+   - ロン: 相手の捨て牌を使ってあがり
+   - ポンは廃止 (単語ゲームには不要)
    ───────────────────────────────────────────────── */
 
-// ── 牌セット定義 ────────────────────────────────────
+// ── ひらがな辞書 (基本46 + 濁音20 + 半濁音5 = 71字) ──
+const BASIC = ['あ','い','う','え','お','か','き','く','け','こ',
+               'さ','し','す','せ','そ','た','ち','つ','て','と',
+               'な','に','ぬ','ね','の','は','ひ','ふ','へ','ほ',
+               'ま','み','む','め','も','や','ゆ','よ',
+               'ら','り','る','れ','ろ','わ','を','ん'];
+const DAKU  = ['が','ぎ','ぐ','げ','ご','ざ','じ','ず','ぜ','ぞ',
+               'だ','ぢ','づ','で','ど','ば','び','ぶ','べ','ぼ'];
+const HANDA = ['ぱ','ぴ','ぷ','ぺ','ぽ'];
+const ALL_CHARS = [...BASIC, ...DAKU, ...HANDA];
+
+// 牌セット (難易度別)
 const CHAR_SETS = {
-  easy: ['あ','い','う','え','お','か','き','く','け','こ'],
-  std:  ['あ','い','う','え','お','か','き','く','け','こ',
-         'さ','し','す','せ','そ','た','ち','つ','て','と','な','に','ぬ'],
-  full: ['あ','い','う','え','お','か','き','く','け','こ',
-         'さ','し','す','せ','そ','た','ち','つ','て','と',
-         'な','に','ぬ','ね','の','は','ひ','ふ','へ','ほ',
-         'ま','み','む','め','も','や','ゆ','よ','ら','り','る','れ','ろ','わ','を','ん'],
+  easy: BASIC,                     // 46字 (濁音/半濁音なし、子供向け)
+  std:  [...BASIC, ...DAKU],       // 66字
+  full: ALL_CHARS,                 // 71字
 };
-const COPIES = 4;
-const HAND_SIZE = 13;
+const COPIES = 2;
+const HAND_SIZE = 7;
+
+// ── 単語辞書 (~250語の常用ひらがな単語) ─────────────
+const WORDS_RAW = `
+あい あお あか あき あさ あし あに あね あめ あり
+いえ いき いし いす いと いぬ いま いみ
+うえ うた うち うで うみ うり うん
+えき えん おに おの おも おや
+かい かう かお かき かさ かに かみ かめ かわ
+きく きつ きぬ きん くち くつ くも くろ
+けし けむ けん こい こえ こめ
+さい さけ さら さん しお しろ しん
+すき すし すな ずつ せき せみ せん そら
+たい たこ たて たね たま ちか ちず
+つき つえ つの つる てら てん
+とき とり となり なみ なつ にし にく ぬの
+ねこ のろ はい はく はち はな はね はる
+ひと ひる ふえ ふた ふゆ へや ほし ほね ほん
+まえ まち まめ まる みず みみ みち みせ
+むし むら めし もも もり やま やね
+ゆき ゆめ ゆり よる よこ
+りす るす れい ろう わた わに
+あんこ あんず あんま いちご いとこ いるか
+うさぎ うちわ うどん えがお えだまめ
+おかし おさけ おちゃ おとこ おとな おばけ おりがみ
+かいだん かたな かばん かるた かけら
+きしゃ きつね きのこ くじら くるま
+けいと げんき
+こども ことば
+さくら さしみ さんま ざぶとん
+しごと しずく じてん
+すずめ すいか すずらん すみれ
+そして
+たいこ たぬき たまご だいこん
+ちから ちりがみ ついで つくえ つばめ つみき
+てがみ となり とんぼ ともだち
+ながい にじいろ にんじん ぬりえ
+ねがい ねむり のはら のうか
+はがき はちみつ はなみ ばすけ
+ひかり ひつじ ふじさん ふでばこ ふくろう
+ぼうし まくら みかん みつばち
+むぎ むらさき もみじ もくよう
+やさい ゆうがた ゆうき ようび
+りんご るすばん れんが ろうそく わかば
+おかあさん おとうさん おにいさん おねえさん おじいさん おばあさん
+こんにちは さようなら ありがとう おやすみ
+ひこうき くだもの たべもの のみもの
+えんぴつ ほうき ふぶき はなび ねぶくろ もうふ
+たいよう さくらんぼ ようちえん ひまわり ようふく
+ながぐつ つくし わかれる
+ガラガラ→remove
+あんぱん きんかん たんぽぽ
+かんがる かんぱい こしょう こうえん こうばん こうちゃ
+あんない うんどう がいこく がっき
+じかん じどう しんぶん せかい たなか たいいく ちきゅう
+てんき とけい にもつ ばあい へいわ ほんとう
+まんが みらい もちもち やちん ゆうき れんしゅう
+りょうり ろうじん わすれる
+あさひ あした あひる
+`;
+
+const WORD_SET = new Set(
+  WORDS_RAW.split(/\s+/).filter(w => w && !w.includes('→') && !w.includes('remove'))
+);
 
 // ── アプリ状態 ─────────────────────────────────────
 const S = {
-  screen: 'home',     // 'home'|'create'|'join'|'config'|'game'|'result'
-  configMode: null,   // 'create'|'solo' (config画面のあと何をするか)
-  difficulty: 'std',  // 'easy'|'std'|'full'
+  screen: 'home',
+  configMode: null,
+  difficulty: 'std',
   // 通信
   peer: null, conn: null, roomCode: null, isHost: false,
   // ゲーム
   wall: [],
-  myHand: [],          // 隠し手牌 (ソート済)
-  myMelds: [],         // 公開面子 [{tiles:['あ','あ','あ'], type:'pon'|'run', from:'opp'}]
+  myHand: [],          // 手牌 (順序が意味を持つ。並び替え可能)
+  myDrawnIdx: null,    // ツモった牌の手牌内index (黄枠表示用)
   oppHandCount: 0,
-  oppMelds: [],
-  myDiscards: [],
-  oppDiscards: [],
+  myDiscards: [], oppDiscards: [],
   myTurn: false,
-  drawn: null,         // ツモ牌
-  lastDiscard: null,   // 直前の相手の捨て牌 (ポン/ロン判定用)
-  pendingClaim: false, // 相手の捨て牌に対するポン/ロン待ち
-  winner: null, winHand: null, winType: null, // 'tsumo'|'ron'
+  lastDiscard: null, pendingClaim: false,
+  winner: null, winHand: null, winType: null, winWords: null,
   // ソロ
   solo: false, oppHand: [], aiTimer: null,
   // UI
   inputCode: '',
-  selectedIdx: null, // null|number: 選択中の手牌インデックス, -1=ツモ牌
+  selectedIdx: null,
 };
 
 // ── ユーティリティ ─────────────────────────────────
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 const chars = () => CHAR_SETS[S.difficulty];
-const charIdx = t => chars().indexOf(t);
-const sortHand = h => [...h].sort((a,b) => charIdx(a) - charIdx(b));
 
 function buildWall(diff) {
   const cs = CHAR_SETS[diff];
@@ -67,97 +131,72 @@ function buildWall(diff) {
   return w;
 }
 
-// ── 上がり判定 ────────────────────────────────────
-// 面子=3枚(順子or刻子) を再帰的に探す
-function canFormSets(tiles, n) {
-  // tiles: ソート済配列, n: 残り何面子作ればいいか
-  if (n === 0) return tiles.length === 0;
-  if (tiles.length < 3) return false;
-  const t = tiles[0];
-  const i = charIdx(t);
-  // 試行1: 刻子 (同字3)
-  if (tiles[1] === t && tiles[2] === t) {
-    if (canFormSets(tiles.slice(3), n-1)) return true;
-  }
-  // 試行2: 順子 (i, i+1, i+2)
-  const cs = chars();
-  if (i+2 < cs.length) {
-    const next1 = cs[i+1], next2 = cs[i+2];
-    const i1 = tiles.indexOf(next1, 1);
-    if (i1 > 0) {
-      const i2 = tiles.indexOf(next2, i1+1);
-      if (i2 > 0) {
-        const rest = tiles.filter((_,k) => k!==0 && k!==i1 && k!==i2);
-        if (canFormSets(rest, n-1)) return true;
+// ── 単語判定ロジック ──────────────────────────────
+function isWord(s) { return WORD_SET.has(s); }
+
+// 手牌が単語列に分割できるか (DP)
+function canSplitIntoWords(tiles) {
+  const n = tiles.length;
+  if (n < 2) return false;
+  const dp = new Array(n+1).fill(false);
+  dp[0] = true;
+  for (let i = 2; i <= n; i++) {
+    for (let len = 2; len <= 5 && len <= i; len++) {
+      const j = i - len;
+      if (dp[j] && isWord(tiles.slice(j, i).join(''))) {
+        dp[i] = true; break;
       }
     }
   }
-  return false;
+  return dp[n];
 }
 
-// 4面子+1雀頭
-function isStandardWin(tiles) {
-  if (tiles.length % 3 !== 2) return false;
-  const sorted = sortHand(tiles);
-  // 各雀頭候補を試す
-  const seen = new Set();
-  for (let i=0;i<sorted.length-1;i++) {
-    if (seen.has(sorted[i])) continue;
-    if (sorted[i] !== sorted[i+1]) continue;
-    seen.add(sorted[i]);
-    const rest = sorted.filter((_,k) => k!==i && k!==i+1);
-    if (canFormSets(rest, (tiles.length-2)/3)) return true;
+// 単語分割を実際に求める (長い単語優先)
+function findWordPartition(tiles) {
+  const n = tiles.length;
+  if (n < 2) return null;
+  const dp = new Array(n+1).fill(null);
+  dp[0] = { from: -1 };
+  for (let i = 2; i <= n; i++) {
+    for (let len = 5; len >= 2; len--) {
+      if (len > i) continue;
+      const j = i - len;
+      if (dp[j] !== null) {
+        const w = tiles.slice(j, i).join('');
+        if (isWord(w)) {
+          dp[i] = { from: j, word: w };
+          break;
+        }
+      }
+    }
   }
-  return false;
-}
-
-// 七対子: 14枚で7ペア (面子なし時のみ)
-function isSevenPairs(tiles) {
-  if (tiles.length !== 14) return false;
-  const cnt = {};
-  for (const t of tiles) cnt[t] = (cnt[t]||0)+1;
-  let pairs = 0;
-  for (const k in cnt) {
-    if (cnt[k] === 2) pairs++;
-    else if (cnt[k] === 4) pairs += 2;
-    else return false;
+  if (dp[n] === null) return null;
+  const partition = [];
+  let i = n;
+  while (i > 0) {
+    partition.unshift({ start: dp[i].from, end: i, word: dp[i].word });
+    i = dp[i].from;
   }
-  return pairs === 7;
+  return partition;
 }
 
-// 完全な上がり判定: 隠し手牌+ツモ/ロン牌 + 公開面子
-function checkWin(concealed, melds, extra) {
-  const all = sortHand([...concealed, extra]);
-  const setsNeeded = 4 - melds.length;
-  if (setsNeeded < 0) return false;
-  // 七対子: 公開面子なしの時のみ
-  if (melds.length === 0 && isSevenPairs(all)) return true;
-  // 標準形: 隠し牌で (setsNeeded面子+1雀頭)
-  if (all.length !== setsNeeded * 3 + 2) return false;
-  // 雀頭探索
-  const seen = new Set();
-  for (let i=0;i<all.length-1;i++) {
-    if (seen.has(all[i])) continue;
-    if (all[i] !== all[i+1]) continue;
-    seen.add(all[i]);
-    const rest = all.filter((_,k) => k!==i && k!==i+1);
-    if (canFormSets(rest, setsNeeded)) return true;
+// ロン可能判定: 相手の捨て牌を任意位置に挿入して単語分割できるか
+function canRonWith(concealed, tile) {
+  for (let pos = 0; pos <= concealed.length; pos++) {
+    const arr = [...concealed.slice(0, pos), tile, ...concealed.slice(pos)];
+    if (canSplitIntoWords(arr)) return arr;
   }
-  return false;
+  return null;
 }
 
-// ポン可能判定: 隠し手牌に同じ牌が2枚以上あるか
-function canPon(concealed, tile) {
-  return concealed.filter(t => t === tile).length >= 2;
-}
-
-// テンパイ判定: 手牌に何の牌を足せば上がるか調べる
-function findWaits(concealed, melds) {
-  const waits = [];
+// テンパイ判定: 何を引けば上がれるか
+function findWaits(concealed) {
+  const waits = new Set();
   for (const t of chars()) {
-    if (checkWin(concealed, melds, t)) waits.push(t);
+    if (waits.has(t)) continue;
+    if (canRonWith(concealed, t)) waits.add(t);
   }
-  return waits;
+  return [...waits];
 }
 
 // ── レンダリング ───────────────────────────────────
@@ -176,19 +215,19 @@ function render() {
 function renderHome() {
   return `<div class="screen home">
     <div class="title">ひらがジャン</div>
-    <div class="subtitle">ひらがな麻雀・2人対戦</div>
+    <div class="subtitle">ひらがなで単語を作る・2人対戦</div>
     <button class="btn primary" id="btn-create">ルーム作成</button>
     <button class="btn" id="btn-join">ルームに参加</button>
     <button class="btn ghost" id="btn-solo">🤖 1人で試す (AI対戦)</button>
     <div class="rule-card">
-      <div class="rule-title">あがりかた</div>
+      <div class="rule-title">あそびかた</div>
       <ul>
-        <li><b>4面子1雀頭</b>: 3枚組×4 + ペア×1</li>
-        <li>面子=順子(あいう・かきく等の連続) または 刻子(あああ等の同字3)</li>
-        <li><b>七対子</b>: ペア×7 (面子0のとき)</li>
-        <li><b>ツモ</b>: 自分のツモで上がり</li>
-        <li><b>ロン</b>: 相手の捨て牌で上がり</li>
-        <li><b>ポン</b>: 相手の捨てを取って刻子作成</li>
+        <li>手牌7枚を並び替えて<b>意味のある単語</b>を作る</li>
+        <li>例: 「<b>あんこ</b>」+「<b>ねこ</b>」+「<b>うえ</b>」=7字</li>
+        <li>全部の牌が単語になればあがり</li>
+        <li><b>ツモ</b>: 自分のツモであがり</li>
+        <li><b>ロン</b>: 相手の捨て牌を使ってあがり</li>
+        <li>単語は2字以上, 辞書(${WORD_SET.size}語)に登録されたもの</li>
       </ul>
     </div>
   </div>`;
@@ -201,16 +240,16 @@ function renderConfig() {
     <div class="subtitle">難易度を選んでください</div>
     <div class="diff-list">
       <button class="diff-btn ${S.difficulty==='easy'?'on':''}" data-diff="easy">
-        <div class="diff-name">かんたん</div>
-        <div class="diff-meta">10字 × 4 = 40枚 (短時間)</div>
+        <div class="diff-name">かんたん (子供向け)</div>
+        <div class="diff-meta">基本46字×2=92枚 / 濁音なし</div>
       </button>
       <button class="diff-btn ${S.difficulty==='std'?'on':''}" data-diff="std">
         <div class="diff-name">ふつう</div>
-        <div class="diff-meta">23字 × 4 = 92枚 (標準)</div>
+        <div class="diff-meta">基本46+濁音20 ×2=132枚</div>
       </button>
       <button class="diff-btn ${S.difficulty==='full'?'on':''}" data-diff="full">
         <div class="diff-name">ほんかく</div>
-        <div class="diff-meta">46字 × 4 = 184枚 (長時間)</div>
+        <div class="diff-meta">71字×2=142枚 (半濁音含む)</div>
       </button>
     </div>
     <button class="btn primary" id="btn-config-go">この難易度で開始</button>
@@ -246,37 +285,32 @@ function renderJoin() {
   </div>`;
 }
 
-// ── 手牌グルーピング表示 ────────────────────────────
-// 隣接同字 or 連続を色分け、選択中は強調
-function renderGroupedHand(tiles, options={}) {
+// 手牌を単語ごとに色分けして表示
+function renderHandWithWords(tiles, options={}) {
   const action = options.action ? options.action : '';
   const selected = options.selected;
-  const cs = chars();
-  let lastChar = null;
-  let groupColor = 0;
-  const html = tiles.map((t, i) => {
+  const drawnIdx = options.drawnIdx;
+  // 単語分割を取得
+  const partition = findWordPartition(tiles);
+  // 各タイルがどの単語に属するか
+  const wordOf = new Array(tiles.length).fill(null);
+  if (partition) {
+    partition.forEach((p, k) => {
+      for (let i=p.start;i<p.end;i++) wordOf[i] = k;
+    });
+  }
+  return tiles.map((t, i) => {
     let cls = 'tile';
-    if (lastChar !== null) {
-      const lastIdx = cs.indexOf(lastChar);
-      const curIdx = cs.indexOf(t);
-      if (!(lastChar === t || curIdx === lastIdx + 1)) {
-        groupColor = (groupColor + 1) % 4;
-      }
+    if (wordOf[i] !== null) {
+      cls += ' word w' + (wordOf[i] % 4);
+    } else {
+      cls += ' nogroup';
     }
-    cls += ' g' + groupColor;
     if (selected === i) cls += ' selected';
-    lastChar = t;
+    if (drawnIdx === i) cls += ' drawn';
     const data = action ? `data-idx="${i}" data-action="${action}"` : '';
     return `<div class="${cls}" ${data}>${esc(t)}</div>`;
   }).join('');
-  return html;
-}
-
-function renderMelds(melds) {
-  if (!melds || melds.length === 0) return '';
-  return melds.map(m =>
-    `<div class="meld">${m.tiles.map(t => `<div class="tile small open">${esc(t)}</div>`).join('')}</div>`
-  ).join('<span class="meld-sep"></span>');
 }
 
 function renderDiscards(list, lastIdx=-1) {
@@ -291,67 +325,83 @@ function renderGame() {
   const myDis = renderDiscards(S.myDiscards);
   const oppDis = renderDiscards(S.oppDiscards, S.lastDiscard ? S.oppDiscards.length-1 : -1);
 
-  // テンパイ判定 (自分のターンで未ツモのとき = 13枚)
+  // 単語分割の結果
+  const partition = findWordPartition(S.myHand);
+  const isWinning = partition !== null;
+
+  // テンパイ判定 (7枚の時のみ意味あり)
   let tenpaiInfo = '';
-  if (S.myTurn && !S.drawn && !S.pendingClaim && S.myHand.length === 13 - S.myMelds.length * 0) {
-    // 13枚のとき: 何かを足せば14枚になる→ checkWin
-    const waits = findWaits(S.myHand, S.myMelds);
-    if (waits.length > 0) tenpaiInfo = `<div class="tenpai-badge">🔥 テンパイ! 待ち: ${waits.map(esc).join('・')}</div>`;
+  if (S.myTurn && !S.pendingClaim && S.myHand.length === HAND_SIZE) {
+    const waits = findWaits(S.myHand);
+    if (waits.length > 0) {
+      const display = waits.length > 8 ? waits.slice(0,8).join('・')+'…' : waits.join('・');
+      tenpaiInfo = `<div class="tenpai-badge">🔥 テンパイ! 待ち: ${display}</div>`;
+    }
+  }
+
+  // 単語表示エリア (常時表示・現在の分割を見せる)
+  let wordsHTML = '';
+  if (partition) {
+    wordsHTML = `<div class="words-detected">${partition.map(p =>
+      `<span class="detected-word">${esc(p.word)}</span>`
+    ).join('')}</div>`;
+  } else if (S.myHand.length > 0) {
+    wordsHTML = `<div class="words-detected"><span class="muted">単語未成立 (並び替えて作ろう)</span></div>`;
   }
 
   // ターン表示・操作ボタン
   let turnLabel, actionArea = '';
   if (S.pendingClaim) {
     const tile = S.lastDiscard;
-    const ronOK = checkWin(S.myHand, S.myMelds, tile);
-    const ponOK = canPon(S.myHand, tile);
+    const ronArr = canRonWith(S.myHand, tile);
     turnLabel = `相手の「${tile}」に対する応答`;
     actionArea = `<div class="action-row">
-      ${ronOK ? `<button class="big-btn win" id="btn-ron">🏆 ロン</button>` : ''}
-      ${ponOK ? `<button class="big-btn alt" id="btn-pon">ポン</button>` : ''}
+      ${ronArr ? `<button class="big-btn win" id="btn-ron">🏆 ロン</button>` : ''}
       <button class="big-btn skip" id="btn-skip">スキップ</button>
     </div>`;
-  } else if (S.myTurn && !S.drawn) {
-    turnLabel = 'あなたの番: ツモ';
-    actionArea = `<button class="big-btn" id="btn-draw">ツモ</button>`;
-  } else if (S.myTurn && S.drawn) {
-    const tsumoOK = checkWin(S.myHand, S.myMelds, S.drawn);
-    if (tsumoOK) {
-      turnLabel = '🏆 ツモ可能!';
+  } else if (S.myTurn) {
+    const hasDrawn = S.myHand.length === HAND_SIZE + 1;
+    if (isWinning) {
+      turnLabel = '🏆 単語成立! あがり可能';
       actionArea = `<div class="action-row">
-        <button class="big-btn win" id="btn-tsumo">🏆 ツモあがり</button>
+        <button class="big-btn win" id="btn-tsumo">🏆 あがり</button>
+        ${!hasDrawn ? `<button class="big-btn alt" id="btn-draw">ツモ (続ける)</button>` : ''}
         ${S.selectedIdx != null
-          ? `<button class="big-btn" id="btn-confirm-discard">捨てる</button>
-             ${S.selectedIdx >= 0 ? `<button class="btn xs" id="btn-move-left">←</button><button class="btn xs" id="btn-move-right">→</button>` : ''}`
-          : `<div class="hint">捨てる時は手牌タップ</div>`}
+          ? `<button class="big-btn alt" id="btn-confirm-discard">捨てる</button>
+             <button class="btn xs ghost" id="btn-cancel-select">キャンセル</button>`
+          : ''}
       </div>`;
     } else if (S.selectedIdx != null) {
-      const t = S.selectedIdx === -1 ? S.drawn : S.myHand[S.selectedIdx];
+      const t = S.myHand[S.selectedIdx];
       turnLabel = `「${t}」を捨てますか?`;
       actionArea = `<div class="action-row">
         <button class="big-btn" id="btn-confirm-discard">捨てる</button>
-        ${S.selectedIdx >= 0 ? `<button class="btn xs" id="btn-move-left">← 左へ</button><button class="btn xs" id="btn-move-right">→ 右へ</button>` : ''}
+        <button class="btn xs" id="btn-move-left">← 左へ</button>
+        <button class="btn xs" id="btn-move-right">→ 右へ</button>
         <button class="btn xs ghost" id="btn-cancel-select">キャンセル</button>
       </div>`;
+    } else if (hasDrawn) {
+      turnLabel = '並び替えて単語を作ろう・捨てる牌をタップ';
+      actionArea = `<div class="hint">手牌タップで選択 → 移動 or 捨てる</div>`;
     } else {
-      turnLabel = '捨てる牌をタップ';
-      actionArea = `<div class="hint">手牌またはツモ牌をタップ</div>`;
+      turnLabel = 'あなたの番: ツモ';
+      actionArea = `<div class="action-row">
+        <button class="big-btn" id="btn-draw">ツモ</button>
+        <div class="hint">並び替え可能 (タップ → 移動)</div>
+      </div>`;
     }
   } else {
     turnLabel = '相手の番...';
   }
 
-  const drawnTile = S.drawn ? `<div class="tile drawn ${S.selectedIdx===-1?'selected':''}" data-action="select-drawn">${esc(S.drawn)}</div>` : '';
-
   return `<div class="screen game">
-    <!-- 上部: 残り山・ターン・終了 -->
     <div class="bar top">
       <div class="bar-side">山:${S.wall.length}</div>
       <div class="bar-mid ${S.myTurn||S.pendingClaim?'my-turn':''}">${turnLabel}</div>
       <div class="bar-side"><button class="btn xs ghost" id="btn-quit">終了</button></div>
     </div>
 
-    <!-- 相手エリア -->
+    <!-- 相手 -->
     <div class="opp-area">
       <div class="player-label">
         <span>相手</span>
@@ -359,7 +409,6 @@ function renderGame() {
       </div>
       <div class="hand-row">
         <div class="concealed">${oppBacks}</div>
-        <div class="melds">${renderMelds(S.oppMelds)}</div>
       </div>
       <div class="discards-zone">
         <div class="zone-label">相手の捨て牌</div>
@@ -367,29 +416,28 @@ function renderGame() {
       </div>
     </div>
 
-    <!-- 中央: 操作 -->
+    <!-- 中央 -->
     <div class="center-zone">
       ${tenpaiInfo}
       ${actionArea}
     </div>
 
-    <!-- 自分エリア -->
+    <!-- 自分 -->
     <div class="me-area">
       <div class="discards-zone">
         <div class="zone-label">自分の捨て牌</div>
         <div class="discards">${myDis||'<span class="muted">なし</span>'}</div>
       </div>
-      <div class="melds">${renderMelds(S.myMelds)}</div>
       <div class="player-label">
-        <span>自分</span>
+        <span>自分 ${isWinning?'<span class="winning-badge">単語成立!</span>':''}</span>
         <span class="hand-tools">
-          <button class="btn xs ghost" id="btn-sort">🔃 並べ替え</button>
-          <span class="muted">手牌${S.myHand.length}枚${S.drawn?' +1':''}</span>
+          <button class="btn xs ghost" id="btn-sort">🔃 ソート</button>
+          <span class="muted">${S.myHand.length}枚</span>
         </span>
       </div>
+      ${wordsHTML}
       <div class="hand-row">
-        <div class="concealed mine">${renderGroupedHand(S.myHand, {action:'select-hand', selected:S.selectedIdx})}</div>
-        ${drawnTile ? `<div class="drawn-wrap">${drawnTile}</div>` : ''}
+        <div class="concealed mine">${renderHandWithWords(S.myHand, {action:'select-hand', selected:S.selectedIdx, drawnIdx:S.myDrawnIdx})}</div>
       </div>
     </div>
   </div>`;
@@ -400,16 +448,17 @@ function renderResult() {
   if (S.winner === 'me')        { msg = '🎉 あなたの勝ち！'; sub = S.winType==='tsumo'?'ツモ':'ロン'; }
   else if (S.winner === 'opp')  { msg = '😢 相手の勝ち';     sub = S.winType==='tsumo'?'ツモ':'ロン'; }
   else                          { msg = '🤝 流局 (引き分け)'; }
-  const handDisp = S.winHand
-    ? `<div class="hand-row center"><div class="concealed">${renderGroupedHand(S.winHand)}</div></div>`
+  const wordsHTML = S.winWords
+    ? `<div class="result-words">${S.winWords.map(w => `<span class="detected-word big">${esc(w)}</span>`).join('')}</div>`
     : '';
-  const meldsDisp = S.winner && S.winMelds && S.winMelds.length
-    ? `<div class="melds center">${renderMelds(S.winMelds)}</div>` : '';
+  const handDisp = S.winHand
+    ? `<div class="hand-row center"><div class="concealed">${renderHandWithWords(S.winHand)}</div></div>`
+    : '';
   return `<div class="screen result">
     <div class="title">${msg}</div>
     ${sub ? `<div class="sub-result">${sub}</div>` : ''}
+    ${wordsHTML}
     ${handDisp}
-    ${meldsDisp}
     <button class="btn primary" id="btn-rematch">もう一回</button>
     <button class="btn" id="btn-home">ホームへ</button>
   </div>`;
@@ -417,43 +466,33 @@ function renderResult() {
 
 // ── イベントバインド ───────────────────────────────
 function bind() {
-  // ホーム
   $('btn-create')?.addEventListener('click', () => { S.configMode='create'; S.screen='config'; render(); });
   $('btn-join')?.addEventListener('click', () => { S.screen='join'; render(); });
   $('btn-solo')?.addEventListener('click', () => { S.configMode='solo'; S.screen='config'; render(); });
-  // 設定
   document.querySelectorAll('[data-diff]').forEach(b => b.addEventListener('click', e => {
-    S.difficulty = e.currentTarget.dataset.diff;
-    render();
+    S.difficulty = e.currentTarget.dataset.diff; render();
   }));
   $('btn-config-go')?.addEventListener('click', () => {
-    if (S.configMode === 'solo') startSolo();
-    else startCreate();
+    if (S.configMode === 'solo') startSolo(); else startCreate();
   });
-  // 戻る
   $('btn-back')?.addEventListener('click', goHome);
   $('btn-quit')?.addEventListener('click', () => { if (confirm('対戦を終了しますか？')) goHome(); });
-  // コピー・参加
   $('btn-copy')?.addEventListener('click', () => navigator.clipboard?.writeText(S.roomCode).then(()=>alert('コピーしました')));
   $('code-input')?.addEventListener('input', e => { S.inputCode = e.target.value.toUpperCase(); e.target.value = S.inputCode; });
   $('btn-connect')?.addEventListener('click', startJoin);
-  // ゲーム操作
+
   $('btn-draw')?.addEventListener('click', doDraw);
   $('btn-tsumo')?.addEventListener('click', doTsumo);
-  $('btn-pon')?.addEventListener('click', doPon);
   $('btn-ron')?.addEventListener('click', doRon);
   $('btn-skip')?.addEventListener('click', doSkipClaim);
-  // タップ選択モード
   document.querySelectorAll('[data-action="select-hand"]').forEach(el => {
     el.addEventListener('click', e => selectHand(Number(e.currentTarget.dataset.idx)));
   });
-  document.querySelector('[data-action="select-drawn"]')?.addEventListener('click', selectDrawn);
   $('btn-confirm-discard')?.addEventListener('click', confirmDiscard);
   $('btn-cancel-select')?.addEventListener('click', () => { S.selectedIdx = null; render(); });
   $('btn-move-left')?.addEventListener('click', () => moveSelected(-1));
   $('btn-move-right')?.addEventListener('click', () => moveSelected(+1));
-  $('btn-sort')?.addEventListener('click', () => { S.myHand = sortHand(S.myHand); S.selectedIdx = null; render(); });
-  // 結果
+  $('btn-sort')?.addEventListener('click', sortHand);
   $('btn-rematch')?.addEventListener('click', rematch);
   $('btn-home')?.addEventListener('click', goHome);
 }
@@ -464,10 +503,10 @@ function goHome() {
   clearTimeout(S.aiTimer);
   S.aiTimer = null; S.solo = false; S.oppHand = [];
   S.screen = 'home'; S.roomCode = null; S.isHost = false;
-  S.winner = null; S.winHand = null; S.winType = null; S.winMelds = null;
-  S.myHand = []; S.myMelds = []; S.oppMelds = [];
+  S.winner = null; S.winHand = null; S.winType = null; S.winWords = null;
+  S.myHand = []; S.myDrawnIdx = null;
   S.myDiscards = []; S.oppDiscards = [];
-  S.drawn = null; S.lastDiscard = null; S.pendingClaim = false;
+  S.lastDiscard = null; S.pendingClaim = false;
   S.selectedIdx = null;
   render();
 }
@@ -478,7 +517,7 @@ function cleanupPeer() {
   S.conn = null; S.peer = null;
 }
 
-// ── PeerJS: ルーム作成 ─────────────────────────────
+// ── PeerJS ─────────────────────────────────────────
 function startCreate() {
   S.screen = 'create'; S.isHost = true; S.roomCode = null;
   render();
@@ -525,23 +564,22 @@ function randomCode() {
   return s;
 }
 
-// ── ゲーム開始 (ホスト) ────────────────────────────
+// ── ゲーム開始 ─────────────────────────────────────
 function startGame() {
   S.wall = buildWall(S.difficulty);
-  const myH = sortHand(S.wall.splice(0, HAND_SIZE));
+  S.myHand = S.wall.splice(0, HAND_SIZE);
   const oppH = S.wall.splice(0, HAND_SIZE);
-  S.myHand = myH; S.oppHandCount = HAND_SIZE;
-  S.myMelds = []; S.oppMelds = [];
+  S.oppHandCount = HAND_SIZE;
   S.myDiscards = []; S.oppDiscards = [];
-  S.drawn = null; S.lastDiscard = null; S.pendingClaim = false;
-  S.winner = null; S.winHand = null; S.winType = null;
+  S.myDrawnIdx = null; S.lastDiscard = null; S.pendingClaim = false;
+  S.winner = null; S.winHand = null; S.winType = null; S.winWords = null;
+  S.selectedIdx = null;
   S.myTurn = true;
   S.screen = 'game';
   send({type:'init', oppHand: oppH, wall: S.wall, opponentTurn: false, difficulty: S.difficulty});
   render();
 }
 
-// ── メッセージ受信 ─────────────────────────────────
 function onMessage(msg) {
   switch (msg.type) {
     case 'config':
@@ -549,59 +587,46 @@ function onMessage(msg) {
       break;
     case 'init':
       S.difficulty = msg.difficulty || S.difficulty;
-      S.myHand = sortHand(msg.oppHand);
+      S.myHand = msg.oppHand;
       S.oppHandCount = HAND_SIZE;
       S.wall = msg.wall || [];
-      S.myMelds = []; S.oppMelds = [];
       S.myDiscards = []; S.oppDiscards = [];
-      S.drawn = null; S.lastDiscard = null; S.pendingClaim = false;
-      S.winner = null; S.winHand = null; S.winType = null;
+      S.myDrawnIdx = null; S.lastDiscard = null; S.pendingClaim = false;
+      S.winner = null; S.winHand = null; S.winType = null; S.winWords = null;
+      S.selectedIdx = null;
       S.myTurn = msg.opponentTurn;
       S.screen = 'game';
       render();
       break;
     case 'draw':
-      // 相手がツモった
       S.wall = msg.wall || S.wall;
       S.oppHandCount = msg.oppHandCount;
       render();
       break;
     case 'discard':
-      // 相手が捨てた → 自分にポン/ロンの選択肢
       S.oppDiscards.push(msg.tile);
       S.oppHandCount = msg.oppHandCount;
       S.wall = msg.wall || S.wall;
       S.lastDiscard = msg.tile;
-      S.pendingClaim = true; // ポン/ロン待ち
-      render();
-      break;
-    case 'pon':
-      // 相手がポンした
-      S.oppMelds.push({tiles:[msg.tile,msg.tile,msg.tile], type:'pon'});
-      S.oppDiscards.pop(); // 捨て牌から戻る
-      S.oppHandCount -= 2; // 2枚消費
-      S.lastDiscard = null;
-      // 相手がポンしたので、相手は捨てる
-      S.myTurn = false;
+      // 自分がロンできるかチェック
+      if (canRonWith(S.myHand, msg.tile)) {
+        S.pendingClaim = true;
+      } else {
+        S.lastDiscard = null;
+        S.myTurn = true;
+      }
       render();
       break;
     case 'skip':
-      // 相手がスキップ → 自分の番
       S.lastDiscard = null;
       S.myTurn = true;
       render();
       break;
     case 'tsumo':
-      S.winner = 'opp'; S.winType = 'tsumo';
-      S.winHand = msg.hand; S.winMelds = msg.melds || [];
-      S.screen = 'result';
-      render();
-      break;
     case 'ron':
-      S.winner = 'opp'; S.winType = 'ron';
-      S.winHand = msg.hand; S.winMelds = msg.melds || [];
-      S.screen = 'result';
-      render();
+      S.winner = 'opp'; S.winType = msg.type;
+      S.winHand = msg.hand; S.winWords = msg.words;
+      S.screen = 'result'; render();
       break;
     case 'draw_game':
       S.winner = 'draw'; S.screen = 'result'; render();
@@ -616,109 +641,85 @@ function onMessage(msg) {
   }
 }
 
-function send(msg) { try { S.conn?.send(msg); } catch(e){} }
+function send(msg) { try { S.conn?.send(msg); } catch(e) {} }
 
-// ── ターン操作 ─────────────────────────────────────
+// ── 操作: ツモ・捨てる・選択 ───────────────────────
 function doDraw() {
-  if (!S.myTurn || S.drawn || S.pendingClaim) return;
+  if (!S.myTurn || S.pendingClaim) return;
+  if (S.myHand.length >= HAND_SIZE + 1) return; // 既にツモ済み
   if (S.wall.length === 0) {
     if (!S.solo) send({type:'draw_game'});
     S.winner = 'draw'; S.screen = 'result'; render(); return;
   }
-  S.drawn = S.wall.shift();
+  const t = S.wall.shift();
+  S.myHand.push(t);
+  S.myDrawnIdx = S.myHand.length - 1;
   if (!S.solo) send({type:'draw', wall:S.wall, oppHandCount:S.oppHandCount});
   render();
 }
 
-// ── 選択 → 捨てる/並び替え フロー ─────────────────
 function selectHand(idx) {
   if (!S.myTurn) return;
+  // 7枚時も並び替えのために選択可。ただし7枚時は「捨てる」ボタンは出さない (discard可能なのは8枚時のみ)
   S.selectedIdx = (S.selectedIdx === idx) ? null : idx;
   render();
 }
-function selectDrawn() {
-  if (!S.myTurn || !S.drawn) return;
-  S.selectedIdx = (S.selectedIdx === -1) ? null : -1;
-  render();
-}
+
 function confirmDiscard() {
   if (!S.myTurn || S.selectedIdx == null) return;
-  let tile;
-  if (S.selectedIdx === -1) {
-    tile = S.drawn;
-    S.drawn = null;
-  } else {
-    tile = S.myHand[S.selectedIdx];
-    S.myHand.splice(S.selectedIdx, 1);
-    if (S.drawn) {
-      // ツモ牌は手牌の末尾に挿入 (ユーザーの並び順を保つ)
-      S.myHand.push(S.drawn);
-      S.drawn = null;
-    }
-  }
+  if (S.myHand.length !== HAND_SIZE + 1) { alert('まずツモしてください'); return; }
+  const idx = S.selectedIdx;
+  const tile = S.myHand[idx];
+  S.myHand.splice(idx, 1);
+  S.myDrawnIdx = null;
   S.selectedIdx = null;
-  finishDiscard(tile);
+  S.myDiscards.push(tile);
+  S.myTurn = false;
+  if (!S.solo) send({type:'discard', tile, wall:S.wall, oppHandCount:S.oppHandCount});
+  render();
+  scheduleAi();
 }
+
 function moveSelected(dir) {
-  if (S.selectedIdx == null || S.selectedIdx < 0) return;
+  if (S.selectedIdx == null) return;
   const i = S.selectedIdx;
   const j = i + dir;
   if (j < 0 || j >= S.myHand.length) return;
   [S.myHand[i], S.myHand[j]] = [S.myHand[j], S.myHand[i]];
+  if (S.myDrawnIdx === i) S.myDrawnIdx = j;
+  else if (S.myDrawnIdx === j) S.myDrawnIdx = i;
   S.selectedIdx = j;
   render();
 }
 
-function finishDiscard(tile) {
-  S.myDiscards.push(tile);
-  S.myTurn = false;
+function sortHand() {
+  const cs = ALL_CHARS;
+  S.myHand = [...S.myHand].sort((a,b) => cs.indexOf(a) - cs.indexOf(b));
+  S.myDrawnIdx = null;
   S.selectedIdx = null;
-  if (!S.solo) send({type:'discard', tile, wall:S.wall, oppHandCount:S.oppHandCount});
   render();
-  scheduleAi(); // ソロのときAI応答
 }
 
 function doTsumo() {
-  if (!S.drawn) return;
-  if (!checkWin(S.myHand, S.myMelds, S.drawn)) { alert('上がり形ではありません'); return; }
-  const hand = sortHand([...S.myHand, S.drawn]);
+  const partition = findWordPartition(S.myHand);
+  if (!partition) { alert('単語に分割できていません。並び替えてみてください'); return; }
   S.winner = 'me'; S.winType = 'tsumo';
-  S.winHand = hand; S.winMelds = [...S.myMelds];
+  S.winHand = [...S.myHand]; S.winWords = partition.map(p => p.word);
   S.screen = 'result';
-  if (!S.solo) send({type:'tsumo', hand, melds:S.myMelds});
+  if (!S.solo) send({type:'tsumo', hand:S.winHand, words:S.winWords});
   render();
 }
 
 function doRon() {
   if (!S.pendingClaim || S.lastDiscard == null) return;
-  const tile = S.lastDiscard;
-  if (!checkWin(S.myHand, S.myMelds, tile)) { alert('上がり形ではありません'); return; }
-  const hand = sortHand([...S.myHand, tile]);
+  const arr = canRonWith(S.myHand, S.lastDiscard);
+  if (!arr) { alert('単語に分割できません'); return; }
+  const partition = findWordPartition(arr);
   S.winner = 'me'; S.winType = 'ron';
-  S.winHand = hand; S.winMelds = [...S.myMelds];
+  S.winHand = arr; S.winWords = partition.map(p => p.word);
   S.screen = 'result';
-  if (!S.solo) send({type:'ron', hand, melds:S.myMelds});
+  if (!S.solo) send({type:'ron', hand:S.winHand, words:S.winWords});
   render();
-}
-
-function doPon() {
-  if (!S.pendingClaim || S.lastDiscard == null) return;
-  const tile = S.lastDiscard;
-  if (!canPon(S.myHand, tile)) return;
-  // 手牌から2枚抜いて公開面子に
-  let removed = 0;
-  S.myHand = S.myHand.filter(t => {
-    if (t === tile && removed < 2) { removed++; return false; }
-    return true;
-  });
-  S.myMelds.push({tiles:[tile,tile,tile], type:'pon'});
-  S.pendingClaim = false;
-  S.lastDiscard = null;
-  S.myTurn = true;
-  S.drawn = null;
-  if (!S.solo) send({type:'pon', tile});
-  render();
-  // ポン後は捨てる必要あり (drawnなしで手牌から選択)
 }
 
 function doSkipClaim() {
@@ -734,13 +735,13 @@ function doSkipClaim() {
 function startSolo() {
   S.solo = true; S.isHost = false;
   S.wall = buildWall(S.difficulty);
-  S.myHand = sortHand(S.wall.splice(0, HAND_SIZE));
+  S.myHand = S.wall.splice(0, HAND_SIZE);
   S.oppHand = S.wall.splice(0, HAND_SIZE);
   S.oppHandCount = HAND_SIZE;
-  S.myMelds = []; S.oppMelds = [];
   S.myDiscards = []; S.oppDiscards = [];
-  S.drawn = null; S.lastDiscard = null; S.pendingClaim = false;
-  S.winner = null; S.winHand = null; S.winType = null;
+  S.myDrawnIdx = null; S.lastDiscard = null; S.pendingClaim = false;
+  S.winner = null; S.winHand = null; S.winType = null; S.winWords = null;
+  S.selectedIdx = null;
   S.myTurn = true;
   S.screen = 'game';
   render();
@@ -754,58 +755,56 @@ function scheduleAi() {
 
 function aiTurn() {
   if (!S.solo || S.winner) return;
-  // AIロン判定 (自分の捨てた最新牌で)
+  // AIロン判定 (直前に自分が捨てた牌で)
   const myLastDis = S.myDiscards[S.myDiscards.length-1];
-  if (myLastDis && checkWin(S.oppHand, S.oppMelds, myLastDis)) {
-    const hand = sortHand([...S.oppHand, myLastDis]);
-    S.winner = 'opp'; S.winType = 'ron';
-    S.winHand = hand; S.winMelds = [...S.oppMelds];
-    S.screen = 'result'; render(); return;
-  }
-  // AIポン判定 (50%確率で)
-  if (myLastDis && canPon(S.oppHand, myLastDis) && Math.random() < 0.5) {
-    let removed = 0;
-    S.oppHand = S.oppHand.filter(t => {
-      if (t === myLastDis && removed < 2) { removed++; return false; }
-      return true;
-    });
-    S.oppMelds.push({tiles:[myLastDis,myLastDis,myLastDis], type:'pon'});
-    S.oppHandCount = S.oppHand.length;
-    // ポン後すぐ捨て
-    aiDiscard();
-    return;
+  if (myLastDis) {
+    const ronArr = canRonWith(S.oppHand, myLastDis);
+    if (ronArr) {
+      const part = findWordPartition(ronArr);
+      S.winner = 'opp'; S.winType = 'ron';
+      S.winHand = ronArr; S.winWords = part.map(p => p.word);
+      S.screen = 'result'; render(); return;
+    }
   }
   // AIツモ
   if (S.wall.length === 0) {
     S.winner = 'draw'; S.screen = 'result'; render(); return;
   }
-  const drawn = S.wall.shift();
-  S.oppHand.push(drawn);
-  // ツモあがり判定
-  if (checkWin(S.oppHand.slice(0, -1), S.oppMelds, drawn)) {
-    const hand = sortHand([...S.oppHand]);
+  const t = S.wall.shift();
+  S.oppHand.push(t);
+  // 単語分割可能か (任意順序を試す: 簡易的に末尾追加で判定→ダメなら全置換試行は重いので省略)
+  // → 現arrangementと、ソート版で試す
+  let winArr = canSplitIntoWords(S.oppHand) ? S.oppHand
+             : canSplitIntoWords([...S.oppHand].sort((a,b)=>ALL_CHARS.indexOf(a)-ALL_CHARS.indexOf(b))) ? [...S.oppHand].sort((a,b)=>ALL_CHARS.indexOf(a)-ALL_CHARS.indexOf(b))
+             : null;
+  if (winArr) {
+    const part = findWordPartition(winArr);
     S.winner = 'opp'; S.winType = 'tsumo';
-    S.winHand = hand; S.winMelds = [...S.oppMelds];
+    S.winHand = winArr; S.winWords = part.map(p => p.word);
     S.screen = 'result'; render(); return;
   }
   aiDiscard();
 }
 
 function aiDiscard() {
-  // シンプルAI: 孤立牌(1枚もの)優先で捨てる
-  const cnt = {};
-  for (const t of S.oppHand) cnt[t] = (cnt[t]||0)+1;
-  const singles = S.oppHand.filter(t => cnt[t] === 1);
-  const tile = singles.length > 0
-    ? singles[Math.floor(Math.random()*singles.length)]
-    : S.oppHand[Math.floor(Math.random()*S.oppHand.length)];
-  const idx = S.oppHand.indexOf(tile);
-  S.oppHand.splice(idx, 1);
+  // シンプルAI: 単語に貢献していない牌(孤立)を優先で捨てる
+  const part = findWordPartition(S.oppHand);
+  let candidates = [];
+  if (part) {
+    // 既に単語化されているなら、最も短い単語の最初の文字を捨てる(改善余地あり)
+    const inWord = new Array(S.oppHand.length).fill(false);
+    part.forEach(p => { for (let i=p.start;i<p.end;i++) inWord[i] = true; });
+    candidates = S.oppHand.map((t,i) => ({t,i,inWord:inWord[i]})).filter(x => !x.inWord);
+  }
+  if (candidates.length === 0) candidates = S.oppHand.map((t,i) => ({t,i}));
+  const pick = candidates[Math.floor(Math.random()*candidates.length)];
+  const tile = pick.t;
+  S.oppHand.splice(pick.i, 1);
   S.oppDiscards.push(tile);
   S.oppHandCount = S.oppHand.length;
   S.lastDiscard = tile;
-  // プレイヤーにポン/ロンの選択肢
-  if (canPon(S.myHand, tile) || checkWin(S.myHand, S.myMelds, tile)) {
+  // 自分がロン可能か
+  if (canRonWith(S.myHand, tile)) {
     S.pendingClaim = true;
     S.myTurn = false;
   } else {
@@ -822,5 +821,4 @@ function rematch() {
   alert('相手の同意を待っています...');
 }
 
-// ── 起動 ──────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', render);

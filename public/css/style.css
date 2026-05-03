@@ -383,11 +383,46 @@ body {
   100% { transform: scale(1); }
 }
 
-/* グルーピング色 (隣接同字 or 連続でまとめる) */
-.tile.g0 { background: var(--g0); }
-.tile.g1 { background: var(--g1); }
-.tile.g2 { background: var(--g2); }
-.tile.g3 { background: var(--g3); }
+/* 単語ごとの色分け (検出された単語をハイライト) */
+.tile.word.w0 { background: #fef3c7; border-color: #f59e0b; box-shadow: 0 2px 0 #b45309; }
+.tile.word.w1 { background: #dbeafe; border-color: #3b82f6; box-shadow: 0 2px 0 #1e40af; }
+.tile.word.w2 { background: #f3e8ff; border-color: #a855f7; box-shadow: 0 2px 0 #6b21a8; }
+.tile.word.w3 { background: #fce7f3; border-color: #ec4899; box-shadow: 0 2px 0 #9d174d; }
+.tile.nogroup { background: #f8fafc; border-color: var(--text3); box-shadow: 0 2px 0 #475569; opacity: 0.85; }
+
+/* 検出した単語表示 (中央セクション) */
+.words-detected {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 4px 0;
+  min-height: 22px;
+}
+.detected-word {
+  background: var(--green);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-family: 'Hiragino Mincho ProN', serif;
+  letter-spacing: 0.05em;
+}
+.detected-word.big {
+  font-size: 18px;
+  padding: 6px 14px;
+}
+.result-words {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  margin: 12px 0;
+}
+.winning-badge {
+  background: var(--gold);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 99px;
+  margin-left: 6px;
+}
 
 /* ─── 結果 ─────────────────── */
 .result { justify-content: center; align-items: center; }
