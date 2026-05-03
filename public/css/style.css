@@ -1,0 +1,299 @@
+:root {
+  --green: #0f766e;
+  --green2: #14b8a6;
+  --bg: #f0fdfa;
+  --card: #ffffff;
+  --card2: #f1f5f9;
+  --text: #0f172a;
+  --text2: #475569;
+  --text3: #94a3b8;
+  --border: #e2e8f0;
+  --red: #ef4444;
+  --gold: #f59e0b;
+  --tile-bg: #fffbeb;
+  --tile-border: #d4a015;
+  --font: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  overflow: hidden;
+}
+#app { height: 100vh; display: flex; flex-direction: column; }
+
+/* ─── 共通 ─────────────────────── */
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top, 16px) 16px env(safe-area-inset-bottom, 16px);
+  gap: 16px;
+}
+.title {
+  font-size: 28px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--green);
+  letter-spacing: 0.05em;
+}
+.subtitle {
+  text-align: center;
+  color: var(--text2);
+  font-size: 13px;
+  margin-top: -8px;
+}
+.status {
+  text-align: center;
+  color: var(--text2);
+  font-size: 14px;
+  padding: 12px;
+}
+.muted { color: var(--text3); font-size: 12px; }
+
+.btn {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+  width: 100%;
+}
+.btn.primary {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+.btn.small { padding: 8px 12px; font-size: 13px; width: auto; align-self: center; }
+.btn.xs { padding: 4px 10px; font-size: 11px; width: auto; }
+.btn.ghost { background: transparent; border-color: var(--border); color: var(--text2); }
+.btn:active { opacity: 0.85; }
+
+.big-btn {
+  background: var(--green);
+  color: #fff;
+  border: none;
+  border-radius: 99px;
+  padding: 16px 32px;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: var(--font);
+  box-shadow: 0 4px 12px rgba(15,118,110,0.3);
+}
+.big-btn.win {
+  background: var(--gold);
+  box-shadow: 0 4px 12px rgba(245,158,11,0.4);
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+.big-btn:active { opacity: 0.9; }
+
+/* ─── ホーム画面 ─────────────────── */
+.home {
+  justify-content: center;
+}
+.rule-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 24px;
+}
+.rule-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--green);
+}
+.rule-card ol {
+  padding-left: 20px;
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+/* ─── 待機/参加 ──────────────────── */
+.wait, .join {
+  justify-content: center;
+}
+.code-box {
+  background: var(--card);
+  border: 2px dashed var(--green);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  margin: 16px 0;
+}
+.code-label {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+.code {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: var(--green);
+  font-family: 'SF Mono', Menlo, monospace;
+  margin-bottom: 12px;
+}
+.form { display: flex; flex-direction: column; gap: 10px; }
+.form label { font-size: 13px; color: var(--text2); }
+.form input {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 24px;
+  text-align: center;
+  letter-spacing: 0.15em;
+  font-family: 'SF Mono', Menlo, monospace;
+  outline: none;
+  background: var(--card);
+  text-transform: uppercase;
+}
+.form input:focus { border-color: var(--green); }
+
+/* ─── ゲーム画面 ────────────────── */
+.game {
+  padding: env(safe-area-inset-top, 8px) 8px env(safe-area-inset-bottom, 8px);
+  gap: 8px;
+  overflow: hidden;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border-radius: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.bar-side { flex: 0 0 auto; min-width: 60px; color: var(--text2); }
+.bar-mid {
+  flex: 1;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text2);
+}
+.bar-mid.my-turn {
+  color: var(--green);
+}
+.bar-side:last-child { text-align: right; }
+
+.opp-area, .me-area {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+}
+.opp-area { background: #f8fafc; }
+
+.hand-label, .discards-label {
+  font-size: 11px;
+  color: var(--text2);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.hand.opp { justify-content: center; }
+
+.discards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-height: 28px;
+}
+
+.middle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 60px;
+}
+.hint { color: var(--text2); font-size: 12px; }
+
+/* ─── 牌 ────────────────────────── */
+.tile {
+  background: var(--tile-bg);
+  border: 1.5px solid var(--tile-border);
+  border-radius: 6px;
+  width: 38px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'Hiragino Mincho ProN', serif;
+  box-shadow: 0 2px 0 #b8860b, 0 3px 4px rgba(0,0,0,0.1);
+  cursor: pointer;
+  transition: transform 0.1s;
+  flex: 0 0 auto;
+}
+.tile:active { transform: translateY(2px); box-shadow: 0 0 0 #b8860b; }
+.tile.back {
+  background: linear-gradient(135deg, #14b8a6, #0f766e);
+  border-color: #0f766e;
+  box-shadow: 0 2px 0 #134e4a, 0 3px 4px rgba(0,0,0,0.15);
+  color: transparent;
+}
+.tile.back::after {
+  content: '🀫';
+  color: rgba(255,255,255,0.4);
+  font-size: 24px;
+}
+.tile.discard {
+  width: 28px;
+  height: 36px;
+  font-size: 18px;
+  box-shadow: 0 1px 0 #b8860b;
+  cursor: default;
+}
+.tile.drawn {
+  background: #fef3c7;
+  border-color: var(--gold);
+  animation: pop 0.3s ease-out;
+}
+@keyframes pop {
+  0% { transform: scale(0.8); }
+  100% { transform: scale(1); }
+}
+.gap { width: 10px; }
+
+/* ─── 結果画面 ───────────────────── */
+.result { justify-content: center; align-items: center; }
+.result .title { font-size: 36px; }
+.result-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  padding: 12px;
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin: 16px 0;
+}
