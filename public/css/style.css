@@ -424,6 +424,27 @@ body {
   margin-left: 6px;
 }
 
+/* ─── 判定画面 (相手のあがり宣言を見る側) ─── */
+.judging { padding: 16px; gap: 12px; justify-content: center; }
+.judging .title { font-size: 24px; }
+.judging-card {
+  background: var(--card);
+  border: 2px solid var(--gold);
+  border-radius: 16px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.judge-prompt {
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* 待機中 */
+.waiting-judge { justify-content: center; align-items: center; }
+.waiting-judge .title { font-size: 24px; margin-bottom: 12px; }
+
 /* ─── 結果 ─────────────────── */
 .result { justify-content: center; align-items: center; }
 .result .title { font-size: 32px; }

@@ -27,7 +27,7 @@ const CHAR_SETS = {
   full: ALL_CHARS,                 // 71字
 };
 const COPIES = 2;
-const HAND_SIZE = 7;
+const HAND_SIZE = 13;
 
 // ── 単語辞書 (~250語の常用ひらがな単語) ─────────────
 const WORDS_RAW = `
@@ -107,6 +107,9 @@ const S = {
   myDiscards: [], oppDiscards: [],
   myTurn: false,
   lastDiscard: null, pendingClaim: false,
+  // あがり宣言 → 相手の判定待ち
+  judging: null,       // {hand, words, type:'tsumo'|'ron', tile?} 相手から来た宣言
+  awaitingJudge: false, // 自分が宣言して相手のOK/NGを待っている
   winner: null, winHand: null, winType: null, winWords: null,
   // ソロ
   solo: false, oppHand: [], aiTimer: null,
@@ -222,12 +225,12 @@ function renderHome() {
     <div class="rule-card">
       <div class="rule-title">あそびかた</div>
       <ul>
-        <li>手牌7枚を並び替えて<b>意味のある単語</b>を作る</li>
-        <li>例: 「<b>あんこ</b>」+「<b>ねこ</b>」+「<b>うえ</b>」=7字</li>
-        <li>全部の牌が単語になればあがり</li>
-        <li><b>ツモ</b>: 自分のツモであがり</li>
-        <li><b>ロン</b>: 相手の捨て牌を使ってあがり</li>
-        <li>単語は2字以上, 辞書(${WORD_SET.size}語)に登録されたもの</li>
+        <li>手牌13枚 (ツモで14枚) を並び替えて<b>意味のある単語</b>を作る</li>
+        <li>例: 「<b>あんこ</b>」+「<b>ねこ</b>」+「<b>いえ</b>」など</li>
+        <li>準備できたら「<b>あがり宣言</b>」</li>
+        <li>相手が「<b>OK</b>」or「<b>NG</b>」を判断 (会話で決めてOK)</li>
+        <li><b>ツモ</b>: 自分のツモで宣言 / <b>ロン</b>: 相手の捨て牌で宣言</li>
+        <li>辞書(${WORD_SET.size}語) は参考用 (色分けで表示)</li>
       </ul>
     </div>
   </div>`;
@@ -349,46 +352,49 @@ function renderGame() {
     wordsHTML = `<div class="words-detected"><span class="muted">単語未成立 (並び替えて作ろう)</span></div>`;
   }
 
-  // ターン表示・操作ボタン
+  // ── 相手のあがり宣言を判定中 ──
+  if (S.judging) {
+    return renderJudging();
+  }
+  // ── 自分が宣言中で相手の判定待ち ──
+  if (S.awaitingJudge) {
+    return renderAwaitingJudge();
+  }
+
+  // ターン表示・操作ボタン (会話判断型: あがり判定はユーザー宣言で行う)
   let turnLabel, actionArea = '';
   if (S.pendingClaim) {
     const tile = S.lastDiscard;
-    const ronArr = canRonWith(S.myHand, tile);
-    turnLabel = `相手の「${tile}」に対する応答`;
+    turnLabel = `相手が「${tile}」を捨てた`;
     actionArea = `<div class="action-row">
-      ${ronArr ? `<button class="big-btn win" id="btn-ron">🏆 ロン</button>` : ''}
+      <button class="big-btn win" id="btn-declare-ron">🏆 ロン宣言</button>
       <button class="big-btn skip" id="btn-skip">スキップ</button>
-    </div>`;
+    </div>
+    <div class="hint">この牌を使ってあがれるなら「ロン宣言」</div>`;
   } else if (S.myTurn) {
     const hasDrawn = S.myHand.length === HAND_SIZE + 1;
-    if (isWinning) {
-      turnLabel = '🏆 単語成立! あがり可能';
-      actionArea = `<div class="action-row">
-        <button class="big-btn win" id="btn-tsumo">🏆 あがり</button>
-        ${!hasDrawn ? `<button class="big-btn alt" id="btn-draw">ツモ (続ける)</button>` : ''}
-        ${S.selectedIdx != null
-          ? `<button class="big-btn alt" id="btn-confirm-discard">捨てる</button>
-             <button class="btn xs ghost" id="btn-cancel-select">キャンセル</button>`
-          : ''}
-      </div>`;
-    } else if (S.selectedIdx != null) {
+    if (S.selectedIdx != null) {
       const t = S.myHand[S.selectedIdx];
-      turnLabel = `「${t}」を捨てますか?`;
+      turnLabel = `「${t}」を選択中`;
       actionArea = `<div class="action-row">
-        <button class="big-btn" id="btn-confirm-discard">捨てる</button>
+        ${hasDrawn ? `<button class="big-btn" id="btn-confirm-discard">捨てる</button>` : ''}
         <button class="btn xs" id="btn-move-left">← 左へ</button>
         <button class="btn xs" id="btn-move-right">→ 右へ</button>
         <button class="btn xs ghost" id="btn-cancel-select">キャンセル</button>
       </div>`;
     } else if (hasDrawn) {
-      turnLabel = '並び替えて単語を作ろう・捨てる牌をタップ';
-      actionArea = `<div class="hint">手牌タップで選択 → 移動 or 捨てる</div>`;
+      turnLabel = '14牌から単語を作って「あがり宣言」or 1枚捨てる';
+      actionArea = `<div class="action-row">
+        <button class="big-btn win" id="btn-declare-tsumo">🏆 あがり宣言</button>
+        <div class="hint">牌タップ → 並び替え or 捨てる</div>
+      </div>`;
     } else {
-      turnLabel = 'あなたの番: ツモ';
+      turnLabel = 'あなたの番: ツモ or 並び替え';
       actionArea = `<div class="action-row">
         <button class="big-btn" id="btn-draw">ツモ</button>
-        <div class="hint">並び替え可能 (タップ → 移動)</div>
-      </div>`;
+        <button class="big-btn win" id="btn-declare-tsumo">🏆 あがり宣言</button>
+      </div>
+      <div class="hint">手牌をタップで並び替えできます</div>`;
     }
   } else {
     turnLabel = '相手の番...';
@@ -443,6 +449,41 @@ function renderGame() {
   </div>`;
 }
 
+// ── あがり宣言を判定するUI (相手の宣言を見ている側) ──
+function renderJudging() {
+  const j = S.judging;
+  const partition = findWordPartition(j.hand);
+  const detectedWords = partition ? partition.map(p => p.word) : [];
+  const handHTML = renderHandWithWords(j.hand);
+  return `<div class="screen judging">
+    <div class="title">⚖️ 相手のあがり宣言</div>
+    <div class="sub-result">${j.type === 'ron' ? `ロン (${esc(j.tile)} で)` : 'ツモ'}</div>
+    <div class="judging-card">
+      <div class="zone-label">相手の手牌 (${j.hand.length}枚)</div>
+      <div class="hand-row center"><div class="concealed">${handHTML}</div></div>
+      ${detectedWords.length > 0
+        ? `<div class="zone-label">辞書で検出された単語</div>
+           <div class="words-detected">${detectedWords.map(w => `<span class="detected-word">${esc(w)}</span>`).join('')}</div>`
+        : `<div class="muted">辞書には検出された単語なし (本当の単語があるか自分で確認)</div>`}
+    </div>
+    <div class="judge-prompt">この内容で「あがり」を認めますか?</div>
+    <div class="action-row">
+      <button class="big-btn win" id="btn-judge-ok">⭕ 認める (相手の勝ち)</button>
+      <button class="big-btn skip" id="btn-judge-ng">❌ 認めない (続行)</button>
+    </div>
+    <div class="hint">話し合って決めてOK。辞書はあくまで参考。</div>
+  </div>`;
+}
+
+// ── 自分が宣言して相手のOK/NG待ち ──
+function renderAwaitingJudge() {
+  return `<div class="screen waiting-judge">
+    <div class="title">🏆 あがり宣言中</div>
+    <div class="status">相手の判定を待っています...</div>
+    <div class="muted">相手があなたの手牌を確認しています</div>
+  </div>`;
+}
+
 function renderResult() {
   let msg, sub = '';
   if (S.winner === 'me')        { msg = '🎉 あなたの勝ち！'; sub = S.winType==='tsumo'?'ツモ':'ロン'; }
@@ -482,9 +523,11 @@ function bind() {
   $('btn-connect')?.addEventListener('click', startJoin);
 
   $('btn-draw')?.addEventListener('click', doDraw);
-  $('btn-tsumo')?.addEventListener('click', doTsumo);
-  $('btn-ron')?.addEventListener('click', doRon);
+  $('btn-declare-tsumo')?.addEventListener('click', doDeclareTsumo);
+  $('btn-declare-ron')?.addEventListener('click', doDeclareRon);
   $('btn-skip')?.addEventListener('click', doSkipClaim);
+  $('btn-judge-ok')?.addEventListener('click', doJudgeOk);
+  $('btn-judge-ng')?.addEventListener('click', doJudgeNg);
   document.querySelectorAll('[data-action="select-hand"]').forEach(el => {
     el.addEventListener('click', e => selectHand(Number(e.currentTarget.dataset.idx)));
   });
@@ -608,13 +651,8 @@ function onMessage(msg) {
       S.oppHandCount = msg.oppHandCount;
       S.wall = msg.wall || S.wall;
       S.lastDiscard = msg.tile;
-      // 自分がロンできるかチェック
-      if (canRonWith(S.myHand, msg.tile)) {
-        S.pendingClaim = true;
-      } else {
-        S.lastDiscard = null;
-        S.myTurn = true;
-      }
+      // 会話判断型: 常にロン宣言の選択肢を出す (辞書チェックは行わない)
+      S.pendingClaim = true;
       render();
       break;
     case 'skip':
@@ -622,11 +660,34 @@ function onMessage(msg) {
       S.myTurn = true;
       render();
       break;
-    case 'tsumo':
-    case 'ron':
-      S.winner = 'opp'; S.winType = msg.type;
-      S.winHand = msg.hand; S.winWords = msg.words;
-      S.screen = 'result'; render();
+    case 'declare_tsumo':
+      // 相手がツモあがり宣言 → 自分が判定
+      S.judging = {type:'tsumo', hand: msg.hand, words: msg.words || []};
+      S.pendingClaim = false;
+      render();
+      break;
+    case 'declare_ron':
+      // 相手がロン宣言 → 自分が判定
+      S.judging = {type:'ron', hand: msg.hand, words: msg.words || [], tile: msg.tile};
+      S.pendingClaim = false;
+      render();
+      break;
+    case 'judge_ok':
+      // 相手が自分のあがり宣言を認めた → 自分の勝ち
+      S.awaitingJudge = false;
+      S.winner = 'me';
+      // winType / winHand / winWords は宣言した時点の手牌で確定
+      S.winType = S.lastDeclareType || 'tsumo';
+      S.winHand = S.lastDeclareHand || [...S.myHand];
+      S.winWords = S.lastDeclareWords || [];
+      S.screen = 'result';
+      render();
+      break;
+    case 'judge_ng':
+      // 相手が認めなかった → 続行
+      S.awaitingJudge = false;
+      alert('相手はあなたのあがりを認めませんでした。続行します。');
+      render();
       break;
     case 'draw_game':
       S.winner = 'draw'; S.screen = 'result'; render();
@@ -700,25 +761,84 @@ function sortHand() {
   render();
 }
 
-function doTsumo() {
+// ── あがり宣言: ツモあがり (相手の判定待ち) ───────
+function doDeclareTsumo() {
+  if (!S.myTurn) return;
   const partition = findWordPartition(S.myHand);
-  if (!partition) { alert('単語に分割できていません。並び替えてみてください'); return; }
-  S.winner = 'me'; S.winType = 'tsumo';
-  S.winHand = [...S.myHand]; S.winWords = partition.map(p => p.word);
-  S.screen = 'result';
-  if (!S.solo) send({type:'tsumo', hand:S.winHand, words:S.winWords});
+  const words = partition ? partition.map(p => p.word) : [];
+  const hand = [...S.myHand];
+  S.awaitingJudge = true;
+  S.selectedIdx = null;
+  S.lastDeclareType = 'tsumo';
+  S.lastDeclareHand = hand;
+  S.lastDeclareWords = words;
+  if (S.solo) {
+    setTimeout(() => aiJudge({type:'tsumo', hand, words}), 600);
+  } else {
+    send({type:'declare_tsumo', hand, words});
+  }
   render();
 }
 
-function doRon() {
+// ── ロン宣言 ──
+function doDeclareRon() {
   if (!S.pendingClaim || S.lastDiscard == null) return;
-  const arr = canRonWith(S.myHand, S.lastDiscard);
-  if (!arr) { alert('単語に分割できません'); return; }
-  const partition = findWordPartition(arr);
-  S.winner = 'me'; S.winType = 'ron';
-  S.winHand = arr; S.winWords = partition.map(p => p.word);
+  const tile = S.lastDiscard;
+  const hand = [...S.myHand, tile];
+  const partition = findWordPartition(hand);
+  const words = partition ? partition.map(p => p.word) : [];
+  S.awaitingJudge = true;
+  S.selectedIdx = null;
+  S.pendingClaim = false;
+  S.lastDeclareType = 'ron';
+  S.lastDeclareHand = hand;
+  S.lastDeclareWords = words;
+  if (S.solo) {
+    setTimeout(() => aiJudge({type:'ron', hand, words, tile}), 600);
+  } else {
+    send({type:'declare_ron', hand, words, tile});
+  }
+  render();
+}
+
+// ── ソロ用: AIが判定 ──
+function aiJudge(decl) {
+  // AI判定: 辞書で単語成立してるか?
+  const ok = canSplitIntoWords(decl.hand);
+  S.awaitingJudge = false;
+  if (ok) {
+    // 認める → 自分の勝ち
+    S.winner = 'me';
+    S.winType = decl.type;
+    S.winHand = decl.hand;
+    S.winWords = decl.words;
+    S.screen = 'result';
+  } else {
+    alert(`AI: 「単語が成立していません」と認められませんでした。続行します。`);
+  }
+  render();
+}
+
+// ── 判定OK (相手のあがりを認める) ──
+function doJudgeOk() {
+  if (!S.judging) return;
+  const j = S.judging;
+  S.judging = null;
+  // 相手の勝ち
+  S.winner = 'opp'; S.winType = j.type;
+  S.winHand = j.hand; S.winWords = j.words;
   S.screen = 'result';
-  if (!S.solo) send({type:'ron', hand:S.winHand, words:S.winWords});
+  if (!S.solo) send({type:'judge_ok'});
+  render();
+}
+
+// ── 判定NG (相手のあがりを認めない) ──
+function doJudgeNg() {
+  if (!S.judging) return;
+  S.judging = null;
+  // ゲーム続行 (相手の番に戻す)
+  S.myTurn = false;
+  if (!S.solo) send({type:'judge_ng'});
   render();
 }
 
@@ -803,14 +923,9 @@ function aiDiscard() {
   S.oppDiscards.push(tile);
   S.oppHandCount = S.oppHand.length;
   S.lastDiscard = tile;
-  // 自分がロン可能か
-  if (canRonWith(S.myHand, tile)) {
-    S.pendingClaim = true;
-    S.myTurn = false;
-  } else {
-    S.lastDiscard = null;
-    S.myTurn = true;
-  }
+  // 会話判断型: 常にロン宣言の選択肢を出す
+  S.pendingClaim = true;
+  S.myTurn = false;
   render();
 }
 
