@@ -492,45 +492,178 @@ body {
 .waiting-judge { justify-content: center; align-items: center; }
 .waiting-judge .title { font-size: 24px; margin-bottom: 12px; }
 
-/* ─── 横画面レイアウト (landscape) ─── */
+/* ─── 縦画面オーバーレイ「横にしてください」 ─── */
+#rotate-overlay[hidden] { display: none !important; }
+#rotate-overlay {
+  position: fixed; inset: 0;
+  background: var(--mat);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  z-index: 99999;
+  font-family: var(--font);
+}
+#rotate-overlay .rotate-icon { font-size: 80px; animation: spin 2s ease-in-out infinite; }
+#rotate-overlay .rotate-text { font-size: 20px; line-height: 1.6; text-align: center; }
+@keyframes spin {
+  0%, 50%, 100% { transform: rotate(0deg); }
+  25%, 75% { transform: rotate(-90deg); }
+}
+
+/* ─── 横画面の麻雀風ゲームレイアウト ─── */
 @media (orientation: landscape) {
-  .game {
-    display: grid;
-    grid-template-columns: 1fr 1.4fr 1fr;
-    grid-template-areas:
-      "bar bar bar"
-      "opp center me";
-    gap: 8px;
-    padding: 6px 12px env(safe-area-inset-bottom, 6px);
-  }
-  .bar.top { grid-area: bar; }
-  .opp-area { grid-area: opp; }
-  .me-area  { grid-area: me; }
-  .center-zone { grid-area: center; min-height: auto; }
+  body { background: var(--mat); overscroll-behavior: none; }
+  #app { background: var(--mat); }
 
-  /* 13枚を1列に出来るだけ並べる */
-  .hand-row {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  .tile { width: 28px; height: 38px; font-size: 18px; }
-  .tile.discard, .tile.back { width: 18px; height: 24px; font-size: 13px; }
-
-  .opp-area, .me-area {
+  /* ── ホーム/設定/結果は中央寄せでシンプル ── */
+  .screen.home, .screen.config, .screen.wait, .screen.join, .screen.result, .screen.judging, .screen.waiting-judge {
+    background: var(--bg);
+    color: var(--text);
+    max-width: 600px;
+    margin: 0 auto;
     overflow-y: auto;
-    max-height: calc(100vh - 60px);
   }
 
-  /* 中央の操作ボタンは縦並びでコンパクトに */
-  .action-row { flex-direction: column; gap: 6px; }
-  .big-btn { padding: 10px 18px; font-size: 14px; }
+  /* ── ゲーム画面: 卓のような4行レイアウト ── */
+  .game {
+    background: var(--mat);
+    color: #fff;
+    display: grid;
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 4px 8px env(safe-area-inset-bottom, 4px);
+    height: 100vh;
+    overflow: hidden;
+  }
+  .center-zone {
+    min-height: 70px;
+    padding: 4px;
+  }
 
-  /* タイトル等は控えめに */
-  .player-label { font-size: 10px; }
-  .zone-label { font-size: 9px; }
+  /* 上: 山残/ターン/終了 (バー) */
+  .bar.top {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 4px 10px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+  .bar.top .bar-side { color: rgba(255,255,255,0.85); }
+  .bar.top .bar-mid { color: #fef3c7; font-weight: 800; }
+  .bar.top .bar-mid.my-turn { color: #fde047; text-shadow: 0 0 12px rgba(253,224,71,0.6); }
 
-  /* 区切り */
-  .hand-break { width: 8px; height: 28px; }
+  /* 相手エリア: 縦並び (ラベル/手牌/捨て牌) */
+  .opp-area {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 4px 8px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 4px 12px;
+    align-items: center;
+    min-height: 0;
+  }
+  .opp-area .player-label {
+    color: rgba(255,255,255,0.9);
+    grid-column: 1; grid-row: 1 / span 2;
+    font-size: 11px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .opp-area .hand-row {
+    grid-column: 2; grid-row: 1;
+    justify-content: flex-start;
+  }
+  .opp-area .discards-zone {
+    grid-column: 2; grid-row: 2;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .opp-area .zone-label { color: rgba(255,255,255,0.6); font-size: 10px; flex: 0 0 auto; margin: 0; }
+  .opp-area .discards-zone { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+  .opp-area .discards { background: rgba(255,255,255,0.12); border-radius: 6px; padding: 4px; min-height: 36px; }
+  .opp-area .tile.discard {
+    width: 26px; height: 36px; font-size: 18px;
+    background: var(--tile-bg); border-color: var(--tile-border);
+    box-shadow: 0 2px 0 #b8860b;
+  }
+  .me-area .tile.discard {
+    width: 26px; height: 36px; font-size: 18px;
+  }
+
+  /* 中央: 操作ボタンエリア */
+  .center-zone {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 4px 0;
+    min-height: 0;
+  }
+  .center-zone .action-row { flex-direction: row; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .center-zone .big-btn {
+    padding: 14px 28px;
+    font-size: 18px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+  .center-zone .hint { color: rgba(255,255,255,0.7); font-size: 13px; }
+  .tenpai-badge { display: inline-block; }
+
+  /* 自分エリア: 下部に大きく */
+  .me-area {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .me-area .discards-zone { display: flex; align-items: center; gap: 8px; }
+  .me-area .zone-label { color: rgba(255,255,255,0.7); font-size: 11px; flex: 0 0 auto; margin: 0; }
+  .me-area .discards { flex: 1; background: rgba(0,0,0,0.15); border-radius: 6px; padding: 3px; min-height: 26px; }
+  .me-area .player-label { color: #fef3c7; padding: 0; font-size: 13px; font-weight: 800; }
+  .me-area .hand-tools .btn { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.3); }
+  .me-area .words-detected { padding: 3px 0; }
+  .me-area .hand-row { padding-top: 2px; }
+  .me-area .concealed.mine {
+    gap: 5px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* 自分の手牌は大きい牌 */
+  .me-area .tile {
+    width: 44px;
+    height: 60px;
+    font-size: 32px;
+    border-width: 2px;
+    border-radius: 6px;
+    box-shadow: 0 3px 0 #b8860b, 0 5px 8px rgba(0,0,0,0.25);
+  }
+  .me-area .tile.selected {
+    transform: translateY(-12px);
+    box-shadow: 0 9px 0 #b8860b, 0 12px 18px rgba(245,158,11,0.7);
+  }
+
+  /* 相手の手牌(裏)・捨て牌は小さく */
+  .opp-area .tile.back { width: 16px; height: 22px; }
+  .tile.discard { width: 24px; height: 32px; font-size: 16px; }
+
+  /* 区切りも大きく */
+  .me-area .hand-break { width: 14px; height: 50px; border-left-width: 3px; }
+  .me-area .hand-break::after { font-size: 16px; top: -14px; left: -10px; }
+
+  /* スクロール禁止 */
+  .me-area .concealed { max-width: 100%; }
 }
 
 /* ─── 結果 ─────────────────── */

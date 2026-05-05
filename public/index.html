@@ -4,15 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ひらがジャン">
-<meta name="theme-color" content="#0f766e">
+<meta name="theme-color" content="#064e3b">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/style.css">
 <title>ひらがジャン</title>
 </head>
 <body>
+<div id="rotate-overlay" hidden>
+  <div class="rotate-icon">📱↺</div>
+  <div class="rotate-text">スマホを<br><b>横向き</b>にしてください</div>
+</div>
 <div id="app">読み込み中...</div>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="js/app.js"></script>
@@ -20,6 +24,19 @@
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
+// Best-effort orientation lock (iOS PWA may not support; CSS overlay is fallback)
+window.addEventListener('load', () => {
+  try { screen.orientation?.lock?.('landscape').catch(()=>{}); } catch(_) {}
+});
+// Show overlay when portrait
+function checkOrientation() {
+  const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+  const ov = document.getElementById('rotate-overlay');
+  if (ov) ov.hidden = !isPortrait;
+}
+window.addEventListener('load', checkOrientation);
+window.addEventListener('resize', checkOrientation);
+window.addEventListener('orientationchange', checkOrientation);
 </script>
 </body>
 </html>
