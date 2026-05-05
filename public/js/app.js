@@ -108,8 +108,10 @@ const S = {
   myTurn: false,
   lastDiscard: null, pendingClaim: false,
   // あがり宣言 → 相手の判定待ち
-  judging: null,       // {hand, words, type:'tsumo'|'ron', tile?} 相手から来た宣言
+  judging: null,       // {hand, words, type:'tsumo'|'ron', tile?, breaks?} 相手から来た宣言
   awaitingJudge: false, // 自分が宣言して相手のOK/NGを待っている
+  // 単語区切り (手牌のどこで区切るか・index BEFORE which break appears)
+  handBreaks: [],
   winner: null, winHand: null, winType: null, winWords: null,
   // ソロ
   solo: false, oppHand: [], aiTimer: null,
@@ -289,20 +291,39 @@ function renderJoin() {
 }
 
 // 手牌を単語ごとに色分けして表示
+// options: {action, selected, drawnIdx, breaks}
+//   breaks があれば手動区切り優先 (区切り間で色分け)、無ければ辞書ベースの自動分割
 function renderHandWithWords(tiles, options={}) {
   const action = options.action ? options.action : '';
   const selected = options.selected;
   const drawnIdx = options.drawnIdx;
-  // 単語分割を取得
-  const partition = findWordPartition(tiles);
-  // 各タイルがどの単語に属するか
+  const breaks = options.breaks || [];
+  const useManual = breaks.length > 0;
+
+  // 各タイルがどのグループに属するか
   const wordOf = new Array(tiles.length).fill(null);
-  if (partition) {
-    partition.forEach((p, k) => {
-      for (let i=p.start;i<p.end;i++) wordOf[i] = k;
-    });
+  if (useManual) {
+    // 区切りで分割: 0..breaks[0], breaks[0]..breaks[1], ...
+    let group = 0;
+    for (let i=0;i<tiles.length;i++) {
+      if (breaks.includes(i) && i > 0) group++;
+      wordOf[i] = group;
+    }
+  } else {
+    const partition = findWordPartition(tiles);
+    if (partition) {
+      partition.forEach((p, k) => {
+        for (let i=p.start;i<p.end;i++) wordOf[i] = k;
+      });
+    }
   }
-  return tiles.map((t, i) => {
+
+  const html = [];
+  tiles.forEach((t, i) => {
+    // 区切りマーク (手動の場合のみ表示)
+    if (useManual && breaks.includes(i) && i > 0) {
+      html.push(`<span class="hand-break"></span>`);
+    }
     let cls = 'tile';
     if (wordOf[i] !== null) {
       cls += ' word w' + (wordOf[i] % 4);
@@ -312,8 +333,9 @@ function renderHandWithWords(tiles, options={}) {
     if (selected === i) cls += ' selected';
     if (drawnIdx === i) cls += ' drawn';
     const data = action ? `data-idx="${i}" data-action="${action}"` : '';
-    return `<div class="${cls}" ${data}>${esc(t)}</div>`;
-  }).join('');
+    html.push(`<div class="${cls}" ${data}>${esc(t)}</div>`);
+  });
+  return html.join('');
 }
 
 function renderDiscards(list, lastIdx=-1) {
@@ -342,14 +364,19 @@ function renderGame() {
     }
   }
 
-  // 単語表示エリア (常時表示・現在の分割を見せる)
+  // 単語表示エリア (区切りがあれば手動グループ、なければ辞書自動分割)
   let wordsHTML = '';
-  if (partition) {
+  if (S.handBreaks.length > 0) {
+    const manualWords = breaksToWords(S.myHand, S.handBreaks);
+    wordsHTML = `<div class="words-detected">${manualWords.map(w =>
+      `<span class="detected-word${WORD_SET.has(w)?'':' unknown'}">${esc(w)}${WORD_SET.has(w)?' ⭕':' ?'}</span>`
+    ).join('')}</div>`;
+  } else if (partition) {
     wordsHTML = `<div class="words-detected">${partition.map(p =>
       `<span class="detected-word">${esc(p.word)}</span>`
     ).join('')}</div>`;
   } else if (S.myHand.length > 0) {
-    wordsHTML = `<div class="words-detected"><span class="muted">単語未成立 (並び替えて作ろう)</span></div>`;
+    wordsHTML = `<div class="words-detected"><span class="muted">区切りで分けるか並び替えて単語を作ろう</span></div>`;
   }
 
   // ── 相手のあがり宣言を判定中 ──
@@ -375,11 +402,14 @@ function renderGame() {
     const hasDrawn = S.myHand.length === HAND_SIZE + 1;
     if (S.selectedIdx != null) {
       const t = S.myHand[S.selectedIdx];
-      turnLabel = `「${t}」を選択中`;
+      const hasBreak = S.handBreaks.includes(S.selectedIdx);
+      turnLabel = `「${t}」を選択中 (他の牌タップで入れ替え)`;
       actionArea = `<div class="action-row">
         ${hasDrawn ? `<button class="big-btn" id="btn-confirm-discard">捨てる</button>` : ''}
         <button class="btn xs" id="btn-move-left">← 左へ</button>
         <button class="btn xs" id="btn-move-right">→ 右へ</button>
+        <button class="btn xs ${hasBreak?'':'alt'}" id="btn-toggle-break">${hasBreak?'区切り削除':'✂️ 前で区切る'}</button>
+        ${S.handBreaks.length > 0 ? `<button class="btn xs ghost" id="btn-clear-breaks">区切り全クリア</button>` : ''}
         <button class="btn xs ghost" id="btn-cancel-select">キャンセル</button>
       </div>`;
     } else if (hasDrawn) {
@@ -443,7 +473,7 @@ function renderGame() {
       </div>
       ${wordsHTML}
       <div class="hand-row">
-        <div class="concealed mine">${renderHandWithWords(S.myHand, {action:'select-hand', selected:S.selectedIdx, drawnIdx:S.myDrawnIdx})}</div>
+        <div class="concealed mine">${renderHandWithWords(S.myHand, {action:'select-hand', selected:S.selectedIdx, drawnIdx:S.myDrawnIdx, breaks:S.handBreaks})}</div>
       </div>
     </div>
   </div>`;
@@ -452,19 +482,23 @@ function renderGame() {
 // ── あがり宣言を判定するUI (相手の宣言を見ている側) ──
 function renderJudging() {
   const j = S.judging;
-  const partition = findWordPartition(j.hand);
-  const detectedWords = partition ? partition.map(p => p.word) : [];
-  const handHTML = renderHandWithWords(j.hand);
+  const declaredWords = j.words || [];
+  const handHTML = renderHandWithWords(j.hand, {breaks: j.breaks || []});
+  // 各宣言単語が辞書にあるかチェック
+  const wordCheck = declaredWords.map(w => ({word: w, ok: WORD_SET.has(w)}));
   return `<div class="screen judging">
     <div class="title">⚖️ 相手のあがり宣言</div>
-    <div class="sub-result">${j.type === 'ron' ? `ロン (${esc(j.tile)} で)` : 'ツモ'}</div>
+    <div class="sub-result">${j.type === 'ron' ? `ロン (${esc(j.tile)} を使用)` : 'ツモ'}</div>
     <div class="judging-card">
-      <div class="zone-label">相手の手牌 (${j.hand.length}枚)</div>
+      <div class="zone-label">相手の手牌 (${j.hand.length}枚) ${j.breaks && j.breaks.length>0?'— 区切り通り':'(自動分割)'}</div>
       <div class="hand-row center"><div class="concealed">${handHTML}</div></div>
-      ${detectedWords.length > 0
-        ? `<div class="zone-label">辞書で検出された単語</div>
-           <div class="words-detected">${detectedWords.map(w => `<span class="detected-word">${esc(w)}</span>`).join('')}</div>`
-        : `<div class="muted">辞書には検出された単語なし (本当の単語があるか自分で確認)</div>`}
+      ${declaredWords.length > 0
+        ? `<div class="zone-label">相手が宣言した単語</div>
+           <div class="words-detected">${wordCheck.map(w =>
+             `<span class="detected-word${w.ok?'':' unknown'}">${esc(w.word)}${w.ok?' ⭕':' ?'}</span>`
+           ).join('')}</div>
+           <div class="muted">⭕=辞書あり / ?=辞書未登録 (相手と話し合いで決めてOK)</div>`
+        : `<div class="muted">単語の指定なし (区切りを入れずに宣言)</div>`}
     </div>
     <div class="judge-prompt">この内容で「あがり」を認めますか?</div>
     <div class="action-row">
@@ -536,6 +570,8 @@ function bind() {
   $('btn-move-left')?.addEventListener('click', () => moveSelected(-1));
   $('btn-move-right')?.addEventListener('click', () => moveSelected(+1));
   $('btn-sort')?.addEventListener('click', sortHand);
+  $('btn-toggle-break')?.addEventListener('click', toggleBreakAtSelected);
+  $('btn-clear-breaks')?.addEventListener('click', () => { S.handBreaks = []; render(); });
   $('btn-rematch')?.addEventListener('click', rematch);
   $('btn-home')?.addEventListener('click', goHome);
 }
@@ -661,14 +697,12 @@ function onMessage(msg) {
       render();
       break;
     case 'declare_tsumo':
-      // 相手がツモあがり宣言 → 自分が判定
-      S.judging = {type:'tsumo', hand: msg.hand, words: msg.words || []};
+      S.judging = {type:'tsumo', hand: msg.hand, words: msg.words || [], breaks: msg.breaks || []};
       S.pendingClaim = false;
       render();
       break;
     case 'declare_ron':
-      // 相手がロン宣言 → 自分が判定
-      S.judging = {type:'ron', hand: msg.hand, words: msg.words || [], tile: msg.tile};
+      S.judging = {type:'ron', hand: msg.hand, words: msg.words || [], tile: msg.tile, breaks: msg.breaks || []};
       S.pendingClaim = false;
       render();
       break;
@@ -721,8 +755,43 @@ function doDraw() {
 
 function selectHand(idx) {
   if (!S.myTurn) return;
-  // 7枚時も並び替えのために選択可。ただし7枚時は「捨てる」ボタンは出さない (discard可能なのは8枚時のみ)
-  S.selectedIdx = (S.selectedIdx === idx) ? null : idx;
+  // 既に選択中の牌をタップ → 解除
+  if (S.selectedIdx === idx) { S.selectedIdx = null; render(); return; }
+  // 別の牌が選択中 → タップした位置に移動 (insert before idx)
+  if (S.selectedIdx != null) {
+    const from = S.selectedIdx;
+    const to = idx;
+    const tile = S.myHand[from];
+    S.myHand.splice(from, 1);
+    // from を抜いたので to の位置を補正
+    const newTo = (from < to) ? to - 1 : to;
+    S.myHand.splice(newTo, 0, tile);
+    // drawnIdx 補正
+    if (S.myDrawnIdx === from) S.myDrawnIdx = newTo;
+    else if (S.myDrawnIdx != null) {
+      // from と to の間にあれば移動
+      if (from < S.myDrawnIdx && S.myDrawnIdx <= to) S.myDrawnIdx--;
+      else if (to <= S.myDrawnIdx && S.myDrawnIdx < from) S.myDrawnIdx++;
+    }
+    // 並び替え時は区切りをリセット (位置が壊れるため)
+    S.handBreaks = [];
+    S.selectedIdx = null;
+    render();
+    return;
+  }
+  // 何も選択されてない → このタイルを選択
+  S.selectedIdx = idx;
+  render();
+}
+
+function toggleBreakAtSelected() {
+  if (S.selectedIdx == null || S.selectedIdx === 0) return;
+  const idx = S.selectedIdx;
+  if (S.handBreaks.includes(idx)) {
+    S.handBreaks = S.handBreaks.filter(x => x !== idx);
+  } else {
+    S.handBreaks = [...S.handBreaks, idx].sort((a,b) => a - b);
+  }
   render();
 }
 
@@ -764,20 +833,40 @@ function sortHand() {
 // ── あがり宣言: ツモあがり (相手の判定待ち) ───────
 function doDeclareTsumo() {
   if (!S.myTurn) return;
-  const partition = findWordPartition(S.myHand);
-  const words = partition ? partition.map(p => p.word) : [];
+  const breaks = [...S.handBreaks];
+  // 区切りで分割 → 各グループ文字列の配列を作る (区切りがあれば手動、無ければ辞書ベース)
+  const words = breaksToWords(S.myHand, breaks);
   const hand = [...S.myHand];
   S.awaitingJudge = true;
   S.selectedIdx = null;
   S.lastDeclareType = 'tsumo';
   S.lastDeclareHand = hand;
   S.lastDeclareWords = words;
+  S.lastDeclareBreaks = breaks;
   if (S.solo) {
-    setTimeout(() => aiJudge({type:'tsumo', hand, words}), 600);
+    setTimeout(() => aiJudge({type:'tsumo', hand, words, breaks}), 600);
   } else {
-    send({type:'declare_tsumo', hand, words});
+    send({type:'declare_tsumo', hand, words, breaks});
   }
   render();
+}
+
+// 区切りで手牌を単語配列に変換
+function breaksToWords(tiles, breaks) {
+  if (breaks.length === 0) {
+    // 自動分割
+    const partition = findWordPartition(tiles);
+    return partition ? partition.map(p => p.word) : [];
+  }
+  // 手動分割
+  const words = [];
+  let start = 0;
+  for (const b of breaks) {
+    if (b > start) words.push(tiles.slice(start, b).join(''));
+    start = b;
+  }
+  if (start < tiles.length) words.push(tiles.slice(start).join(''));
+  return words;
 }
 
 // ── ロン宣言 ──
@@ -785,18 +874,19 @@ function doDeclareRon() {
   if (!S.pendingClaim || S.lastDiscard == null) return;
   const tile = S.lastDiscard;
   const hand = [...S.myHand, tile];
-  const partition = findWordPartition(hand);
-  const words = partition ? partition.map(p => p.word) : [];
+  const breaks = [...S.handBreaks];
+  const words = breaksToWords(hand, breaks);
   S.awaitingJudge = true;
   S.selectedIdx = null;
   S.pendingClaim = false;
   S.lastDeclareType = 'ron';
   S.lastDeclareHand = hand;
   S.lastDeclareWords = words;
+  S.lastDeclareBreaks = breaks;
   if (S.solo) {
-    setTimeout(() => aiJudge({type:'ron', hand, words, tile}), 600);
+    setTimeout(() => aiJudge({type:'ron', hand, words, tile, breaks}), 600);
   } else {
-    send({type:'declare_ron', hand, words, tile});
+    send({type:'declare_ron', hand, words, tile, breaks});
   }
   render();
 }
