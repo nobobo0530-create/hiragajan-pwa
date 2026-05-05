@@ -563,7 +563,11 @@ function bind() {
   $('btn-judge-ok')?.addEventListener('click', doJudgeOk);
   $('btn-judge-ng')?.addEventListener('click', doJudgeNg);
   document.querySelectorAll('[data-action="select-hand"]').forEach(el => {
-    el.addEventListener('click', e => selectHand(Number(e.currentTarget.dataset.idx)));
+    el.addEventListener('click', e => {
+      if (dragJustHappened) { dragJustHappened = false; return; }
+      selectHand(Number(e.currentTarget.dataset.idx));
+    });
+    el.addEventListener('pointerdown', onTilePointerDown);
   });
   $('btn-confirm-discard')?.addEventListener('click', confirmDiscard);
   $('btn-cancel-select')?.addEventListener('click', () => { S.selectedIdx = null; render(); });
@@ -750,6 +754,130 @@ function doDraw() {
   S.myHand.push(t);
   S.myDrawnIdx = S.myHand.length - 1;
   if (!S.solo) send({type:'draw', wall:S.wall, oppHandCount:S.oppHandCount});
+  render();
+}
+
+// ── 長押しドラッグで自由に牌を移動 ──────────────
+let dragState = null;
+let dragJustHappened = false;
+const LONG_PRESS_MS = 300;
+const MOVE_TOLERANCE = 12;
+
+function onTilePointerDown(e) {
+  if (!S.myTurn) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const tile = e.currentTarget;
+  const idx = Number(tile.dataset.idx);
+  dragState = {
+    startX: e.clientX, startY: e.clientY,
+    idx, tileEl: tile,
+    ghost: null, dragging: false, offsetX: 0, offsetY: 0,
+    pressTimer: setTimeout(() => startDrag(), LONG_PRESS_MS),
+  };
+  document.addEventListener('pointermove', onTilePointerMove);
+  document.addEventListener('pointerup', onTilePointerUp);
+  document.addEventListener('pointercancel', onTilePointerUp);
+}
+
+function startDrag() {
+  if (!dragState) return;
+  dragState.dragging = true;
+  const tile = dragState.tileEl;
+  const rect = tile.getBoundingClientRect();
+  const ghost = tile.cloneNode(true);
+  ghost.classList.add('drag-ghost');
+  ghost.style.position = 'fixed';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  ghost.style.width = rect.width + 'px';
+  ghost.style.height = rect.height + 'px';
+  ghost.style.zIndex = '9999';
+  ghost.style.pointerEvents = 'none';
+  ghost.style.transform = 'scale(1.3)';
+  ghost.style.opacity = '0.95';
+  ghost.style.transition = 'transform 0.1s';
+  document.body.appendChild(ghost);
+  dragState.ghost = ghost;
+  dragState.offsetX = dragState.startX - rect.left;
+  dragState.offsetY = dragState.startY - rect.top;
+  tile.classList.add('drag-source');
+  navigator.vibrate?.(40);
+}
+
+function onTilePointerMove(e) {
+  if (!dragState) return;
+  if (!dragState.dragging) {
+    const dx = e.clientX - dragState.startX;
+    const dy = e.clientY - dragState.startY;
+    if (Math.hypot(dx, dy) > MOVE_TOLERANCE) {
+      clearTimeout(dragState.pressTimer);
+    }
+    return;
+  }
+  e.preventDefault();
+  dragState.ghost.style.left = (e.clientX - dragState.offsetX) + 'px';
+  dragState.ghost.style.top  = (e.clientY - dragState.offsetY) + 'px';
+  // ドロップ先ハイライト
+  document.querySelectorAll('.tile.drop-target').forEach(t => t.classList.remove('drop-target'));
+  const target = elementBelowExcludingGhost(e.clientX, e.clientY);
+  if (target && Number(target.dataset.idx) !== dragState.idx) {
+    target.classList.add('drop-target');
+  }
+}
+
+function elementBelowExcludingGhost(x, y) {
+  if (!dragState?.ghost) return null;
+  dragState.ghost.style.display = 'none';
+  const el = document.elementFromPoint(x, y);
+  dragState.ghost.style.display = '';
+  return el?.closest('[data-action="select-hand"]');
+}
+
+function onTilePointerUp(e) {
+  if (!dragState) return;
+  clearTimeout(dragState.pressTimer);
+  document.removeEventListener('pointermove', onTilePointerMove);
+  document.removeEventListener('pointerup', onTilePointerUp);
+  document.removeEventListener('pointercancel', onTilePointerUp);
+  if (dragState.dragging) {
+    const target = elementBelowExcludingGhost(e.clientX, e.clientY);
+    if (target) {
+      const fromIdx = dragState.idx;
+      const toIdx = Number(target.dataset.idx);
+      if (fromIdx !== toIdx) {
+        moveTileFreely(fromIdx, toIdx);
+      } else {
+        cleanupDrag();
+        render();
+      }
+    } else {
+      cleanupDrag();
+    }
+    dragJustHappened = true;
+    setTimeout(() => { dragJustHappened = false; }, 150);
+  }
+  dragState = null;
+}
+
+function cleanupDrag() {
+  if (dragState?.ghost) dragState.ghost.remove();
+  if (dragState?.tileEl) dragState.tileEl.classList.remove('drag-source');
+  document.querySelectorAll('.tile.drop-target').forEach(t => t.classList.remove('drop-target'));
+}
+
+function moveTileFreely(from, to) {
+  const tile = S.myHand[from];
+  S.myHand.splice(from, 1);
+  const newTo = (from < to) ? to - 1 : to;
+  S.myHand.splice(newTo, 0, tile);
+  if (S.myDrawnIdx === from) S.myDrawnIdx = newTo;
+  else if (S.myDrawnIdx != null) {
+    if (from < S.myDrawnIdx && S.myDrawnIdx <= to) S.myDrawnIdx--;
+    else if (to <= S.myDrawnIdx && S.myDrawnIdx < from) S.myDrawnIdx++;
+  }
+  S.handBreaks = [];
+  S.selectedIdx = null;
+  cleanupDrag();
   render();
 }
 
