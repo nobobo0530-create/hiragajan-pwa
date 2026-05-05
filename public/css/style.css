@@ -390,6 +390,23 @@ body {
 .tile.word.w3 { background: #fce7f3; border-color: #ec4899; box-shadow: 0 2px 0 #9d174d; }
 .tile.nogroup { background: #f8fafc; border-color: var(--text3); box-shadow: 0 2px 0 #475569; opacity: 0.85; }
 
+/* 単語グループのまとまり (枠付きボックス) */
+.word-group {
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  margin: 0 4px;
+  border: 2px solid transparent;
+  vertical-align: middle;
+  position: relative;
+}
+.word-group.wg0 { background: rgba(245,158,11,0.15);  border-color: #f59e0b; }
+.word-group.wg1 { background: rgba(59,130,246,0.15);  border-color: #3b82f6; }
+.word-group.wg2 { background: rgba(168,85,247,0.15);  border-color: #a855f7; }
+.word-group.wg3 { background: rgba(236,72,153,0.15);  border-color: #ec4899; }
+.word-group.wg-none { background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.4); border-style: dashed; }
+
 /* 検出した単語表示 (中央セクション) */
 .words-detected {
   display: flex; flex-wrap: wrap; gap: 6px;

@@ -215,6 +215,23 @@ function render() {
     S.screen === 'game'   ? renderGame() :
     S.screen === 'result' ? renderResult() : '';
   bind();
+  maybeAutoDraw();
+}
+
+// 自分の番が始まったら自動でツモ
+let autoDrawTimer = null;
+function maybeAutoDraw() {
+  if (autoDrawTimer) { clearTimeout(autoDrawTimer); autoDrawTimer = null; }
+  if (S.screen !== 'game') return;
+  if (!S.myTurn) return;
+  if (S.pendingClaim || S.judging || S.awaitingJudge) return;
+  if (S.myHand.length !== HAND_SIZE) return;  // 既にツモ済み
+  if (S.wall.length === 0) return;
+  autoDrawTimer = setTimeout(() => {
+    if (S.myTurn && S.myHand.length === HAND_SIZE && !S.pendingClaim && !S.judging && !S.awaitingJudge) {
+      doDraw();
+    }
+  }, 600);
 }
 
 function renderHome() {
@@ -303,7 +320,6 @@ function renderHandWithWords(tiles, options={}) {
   // 各タイルがどのグループに属するか
   const wordOf = new Array(tiles.length).fill(null);
   if (useManual) {
-    // 区切りで分割: 0..breaks[0], breaks[0]..breaks[1], ...
     let group = 0;
     for (let i=0;i<tiles.length;i++) {
       if (breaks.includes(i) && i > 0) group++;
@@ -318,24 +334,33 @@ function renderHandWithWords(tiles, options={}) {
     }
   }
 
-  const html = [];
+  // 連続する同じグループをまとめる
+  const groups = [];
+  let cur = null;
   tiles.forEach((t, i) => {
-    // 区切りマーク (手動の場合のみ表示)
-    if (useManual && breaks.includes(i) && i > 0) {
-      html.push(`<span class="hand-break"></span>`);
-    }
-    let cls = 'tile';
-    if (wordOf[i] !== null) {
-      cls += ' word w' + (wordOf[i] % 4);
+    const wi = wordOf[i];
+    if (cur && cur.wordIdx === wi) {
+      cur.items.push({tile: t, idx: i});
     } else {
-      cls += ' nogroup';
+      cur = {wordIdx: wi, items: [{tile: t, idx: i}]};
+      groups.push(cur);
     }
-    if (selected === i) cls += ' selected';
-    if (drawnIdx === i) cls += ' drawn';
-    const data = action ? `data-idx="${i}" data-action="${action}"` : '';
-    html.push(`<div class="${cls}" ${data}>${esc(t)}</div>`);
   });
-  return html.join('');
+
+  // 各グループをボックスで囲って表示
+  return groups.map(g => {
+    const wgClass = (g.wordIdx != null) ? 'wg' + (g.wordIdx % 4) : 'wg-none';
+    const tilesHtml = g.items.map(({tile, idx}) => {
+      let cls = 'tile';
+      if (g.wordIdx != null) cls += ' word w' + (g.wordIdx % 4);
+      else cls += ' nogroup';
+      if (selected === idx) cls += ' selected';
+      if (drawnIdx === idx) cls += ' drawn';
+      const data = action ? `data-idx="${idx}" data-action="${action}"` : '';
+      return `<div class="${cls}" ${data}>${esc(tile)}</div>`;
+    }).join('');
+    return `<div class="word-group ${wgClass}">${tilesHtml}</div>`;
+  }).join('');
 }
 
 function renderDiscards(list, lastIdx=-1) {
@@ -416,15 +441,12 @@ function renderGame() {
       turnLabel = '14牌から単語を作って「あがり宣言」or 1枚捨てる';
       actionArea = `<div class="action-row">
         <button class="big-btn win" id="btn-declare-tsumo">🏆 あがり宣言</button>
-        <div class="hint">牌タップ → 並び替え or 捨てる</div>
+        <div class="hint">牌タップ・ドラッグで並び替え or 捨てる</div>
       </div>`;
     } else {
-      turnLabel = 'あなたの番: ツモ or 並び替え';
-      actionArea = `<div class="action-row">
-        <button class="big-btn" id="btn-draw">ツモ</button>
-        <button class="big-btn win" id="btn-declare-tsumo">🏆 あがり宣言</button>
-      </div>
-      <div class="hint">手牌をタップで並び替えできます</div>`;
+      // 自動ツモ予定
+      turnLabel = 'あなたの番: ツモ中…';
+      actionArea = `<div class="hint">自動でツモします (並び替えは可能)</div>`;
     }
   } else {
     turnLabel = '相手の番...';
@@ -875,10 +897,25 @@ function moveTileFreely(from, to) {
     if (from < S.myDrawnIdx && S.myDrawnIdx <= to) S.myDrawnIdx--;
     else if (to <= S.myDrawnIdx && S.myDrawnIdx < from) S.myDrawnIdx++;
   }
-  S.handBreaks = [];
+  // 区切りも追従させる (位置ベースで調整)
+  S.handBreaks = adjustBreaksForMove(S.handBreaks, from, to);
   S.selectedIdx = null;
   cleanupDrag();
   render();
+}
+
+// 牌移動 (from→to) に伴う区切り位置の補正
+function adjustBreaksForMove(breaks, from, to) {
+  return breaks.map(b => {
+    if (from < to) {
+      // 後ろに移動: from+1..to の牌が左に1つずれる
+      if (b > from && b <= to) return b - 1;
+    } else if (from > to) {
+      // 前に移動: to..from-1 の牌が右に1つずれる
+      if (b >= to && b < from) return b + 1;
+    }
+    return b;
+  }).filter(b => b > 0 && b < S.myHand.length);
 }
 
 function selectHand(idx) {
@@ -901,8 +938,8 @@ function selectHand(idx) {
       if (from < S.myDrawnIdx && S.myDrawnIdx <= to) S.myDrawnIdx--;
       else if (to <= S.myDrawnIdx && S.myDrawnIdx < from) S.myDrawnIdx++;
     }
-    // 並び替え時は区切りをリセット (位置が壊れるため)
-    S.handBreaks = [];
+    // 区切りも追従
+    S.handBreaks = adjustBreaksForMove(S.handBreaks, from, to);
     S.selectedIdx = null;
     render();
     return;

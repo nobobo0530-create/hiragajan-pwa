@@ -1,5 +1,5 @@
 // Simple network-first SW with cache fallback
-const CACHE = 'hiragajan-v6';
+const CACHE = 'hiragajan-v7';
 const ASSETS = ['./','./index.html','./css/style.css','./js/app.js','./manifest.json'];
 
 self.addEventListener('install', e => {
